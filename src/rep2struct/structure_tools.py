@@ -60,6 +60,15 @@ REGISTRY: list[StructureTool] = [
 ]
 
 
+def output_type_for(name: str) -> str:
+    """Return a tool's output_type from the registry, defaulting to
+    "structure" for an unknown tool name."""
+    for t in REGISTRY:
+        if t.name == name:
+            return t.output_type
+    return "structure"
+
+
 def get_default() -> StructureTool:
     return next(t for t in REGISTRY if t.is_default)
 

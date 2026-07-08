@@ -100,6 +100,28 @@ def test_qc_structure_binding_path_uses_binding_verdict(tmp_path):
     assert stored[0]["tool"] == "affinetune"
 
 
+def test_output_type_is_derived_from_tool_not_agent_arg(tmp_path):
+    # A binding tool recorded, but the caller passes the WRONG output_type="structure".
+    # Derivation from the tool must still take the binding path.
+    rd = str(tmp_path / "run")
+    score_file = tmp_path / "c1.score"
+    score_file.write_text("0.9")
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "model_paths": [str(score_file)],
+         "tool": "affinetune"}))
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": 0.5,
+         "output_type": "structure", "tool": "affinetune"}))  # deliberately wrong output_type
+    assert res["structuredContent"]["qc_verdict"] == "presented"
+
+
+def test_output_type_for_helper_defaults_to_structure():
+    from rep2struct import structure_tools as st
+    assert st.output_type_for("affinetune") == "binding_score"
+    assert st.output_type_for("protenix") == "structure"
+    assert st.output_type_for("unknown-tool") == "structure"
+
+
 def test_build_server():
     server = at.build_server()
     assert server["name"] == "rep2struct"

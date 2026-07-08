@@ -126,7 +126,7 @@ async def qc_structure(args):
         rec = {"paths": rec, "tool": "protenix"}
     paths = rec.get("paths", [])
     tool = args.get("tool", rec.get("tool", "protenix"))
-    output_type = args.get("output_type", "structure")
+    output_type = structure_tools.output_type_for(tool)   # tool decides, not the agent
     if not paths:
         res = QCResult(args["clonotype_id"], "qc_failed", "no model recorded", tool=tool)
     elif output_type == "binding_score":
