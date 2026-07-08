@@ -43,11 +43,13 @@ class FoldJob:
 @dataclass
 class QCResult:
     clonotype_id: str
-    qc_verdict: str              # reliable, suspect, qc_failed
+    qc_verdict: str              # reliable, suspect, qc_failed, presented, not_presented
     reason: str
     dockq: Optional[float] = None
     cdr3_pep_atoms: Optional[float] = None
     crossing_angle: Optional[float] = None
+    tool: Optional[str] = None
+    calibration_basis: Optional[str] = None
 
 def to_jsonable(obj):
     return asdict(obj) if hasattr(obj, "__dataclass_fields__") else obj

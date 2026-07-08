@@ -1,5 +1,5 @@
 from pathlib import Path
-from rep2struct.qc import score_model, verdict
+from rep2struct.qc import score_model, verdict, verdict_binding
 FIX = Path(__file__).parent / "fixtures"
 
 def test_cognate_is_reliable():
@@ -22,3 +22,23 @@ def test_three_chain_model_is_qc_failed():
     assert s["cdr3_pep_atoms"] is None
     r = verdict(s, scramble_threshold=1.0)
     assert r.qc_verdict == "qc_failed"
+
+
+def test_binding_verdict_presented_and_not_presented():
+    hi = verdict_binding(0.9, 0.5, "c1", tool="affinetune")
+    lo = verdict_binding(0.3, 0.5, "c2", tool="affinetune")
+    assert hi.qc_verdict == "presented" and lo.qc_verdict == "not_presented"
+
+
+def test_binding_verdict_is_honest_not_a_fold():
+    hi = verdict_binding(0.9, 0.5, "c1", tool="affinetune")
+    lo = verdict_binding(0.3, 0.5, "c2", tool="affinetune")
+    for r in (hi, lo):
+        assert "presentation" in r.reason.lower()
+        assert "fold" not in r.reason.lower() and "structure" not in r.reason.lower()
+    assert hi.tool == "affinetune" and hi.calibration_basis == "binding_score_null"
+    assert hi.cdr3_pep_atoms is None and hi.dockq is None
+
+
+def test_binding_verdict_boundary_equality_is_not_presented():
+    assert verdict_binding(0.5, 0.5, "c1", tool="affinetune").qc_verdict == "not_presented"

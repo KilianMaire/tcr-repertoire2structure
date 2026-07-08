@@ -36,3 +36,14 @@ def verdict(scores, scramble_threshold: float) -> QCResult:
                         cdr3_pep_atoms=scores["cdr3_pep_atoms"])
     return QCResult(cid, "reliable", "CDR3 to peptide contact beats scramble null",
                     cdr3_pep_atoms=scores["cdr3_pep_atoms"])
+
+def verdict_binding(score: float, threshold: float, clonotype_id: str, tool: str) -> QCResult:
+    presented = score > threshold
+    return QCResult(
+        clonotype_id,
+        "presented" if presented else "not_presented",
+        ("predicted presentation above the score null" if presented
+         else "predicted presentation not above the score null"),
+        tool=tool,
+        calibration_basis="binding_score_null",
+    )
