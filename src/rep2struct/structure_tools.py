@@ -40,8 +40,13 @@ REGISTRY: list[StructureTool] = [
         name="mhcfine",
         validity={"mhc_class": {1}, "needs_tcr": False, "species": "any"},
         output_type="structure",
-        strengths="most precise class I peptide pose (RMSD 0.66A)",
-        limits="class I only, no TCR",
+        strengths="most precise class I peptide pose (live-validated 0.54A peptide "
+                  "backbone RMSD vs the 6VRN crystal, matching the paper's ~0.66A)",
+        limits="class I only, no TCR. The pose does NOT discriminate binders from "
+               "non-binders: live calibration showed a scrambled peptide seats in the "
+               "groove just as deeply and neither plddt nor groove-contact separates "
+               "cognate from scramble, so a mhcfine pose is placement only, never "
+               "evidence of recognition",
         colab_adapter="mhcfine_colab",
         qc_metric="peptide_groove",
     ),
