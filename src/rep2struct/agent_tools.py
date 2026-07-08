@@ -103,6 +103,41 @@ async def list_structure_tools(args):
     return r
 
 
+def _fold_inputs(tool: str, job: dict, clonotype_id: str) -> dict:
+    """Shape a fold job's construct into the tool's Colab inputs. mhcfine takes the MHC
+    heavy chain + peptide (keys prefixed by clonotype id so per-clonotype output files
+    never collide). Unwired tools embed the raw construct for their fail-loud scaffold."""
+    from .tools import mhcfine_inputs
+    fasta = job["construct_fasta"]
+    if tool == "mhcfine":
+        built = mhcfine_inputs.build(fasta)
+        return {f"{clonotype_id}_{k}": v for k, v in built.items()}
+    return {"construct_fasta": fasta}
+
+
+@tool("build_fold_notebook",
+      "Build the Colab notebook for one clonotype's fold job, write it under the run dir, and return its path.",
+      {"run_dir": str, "clonotype_id": str, "tool": str})
+async def build_fold_notebook(args):
+    import json as _json
+    from .tools.notebook import build_notebook
+    rs = RunState(args["run_dir"])
+    jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
+    cid = args["clonotype_id"]
+    job = next((j for j in jobs if j["clonotype_id"] == cid), None)
+    if job is None:
+        return _txt(f"no fold job for {cid}")
+    tool = args["tool"]
+    nb = build_notebook(tool, _fold_inputs(tool, job, cid))
+    nb_dir = Path(args["run_dir"]) / "notebooks"
+    nb_dir.mkdir(parents=True, exist_ok=True)
+    out = nb_dir / f"{cid}_{tool}.ipynb"
+    out.write_text(_json.dumps(nb, indent=1))
+    r = _txt(f"notebook for {cid} ({tool}) written to {out}")
+    r["structuredContent"] = {"notebook_path": str(out), "clonotype_id": cid, "tool": tool}
+    return r
+
+
 @tool("record_fold_result", "Record the model paths a fold produced for one clonotype, with the tool used.",
       {"run_dir": str, "clonotype_id": str, "model_paths": list, "tool": str})
 async def record_fold_result(args):
@@ -186,5 +221,6 @@ async def render_final_report(args):
 def build_server():
     return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
         ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
-        list_structure_tools, record_fold_result, qc_structure, render_final_report,
+        list_structure_tools, build_fold_notebook, record_fold_result, qc_structure,
+        render_final_report,
     ])

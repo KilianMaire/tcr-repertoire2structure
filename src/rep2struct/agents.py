@@ -3,8 +3,8 @@ from claude_agent_sdk import ClaudeAgentOptions, AgentDefinition
 from .agent_tools import build_server
 from . import structure_tools
 
-_EXEC_TOOLS = ["mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__record_fold_result",
-               "mcp__playwright__*"]
+_EXEC_TOOLS = ["mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__build_fold_notebook",
+               "mcp__rep2struct__record_fold_result", "mcp__playwright__*"]
 
 
 def _executor(name, tool):
@@ -12,13 +12,15 @@ def _executor(name, tool):
         description=f"{name}: folds the {tool} group by driving its Colab notebook through the browser.",
         prompt=(
             f"You run the {tool} structure tool for the jobs assigned to your group. "
-            f"Call list_fold_jobs, and for each job whose tool is '{tool}', drive the "
-            f"{tool} Colab notebook with the mcp__playwright tools: open it, submit the "
-            f"construct (MSA already embedded, run MSA-free at runtime), wait, download "
-            f"the model or score, then call record_fold_result with tool='{tool}'. The "
-            f"loop is resumable; skip jobs already recorded. If the {tool} Colab adapter "
-            f"is not available in this environment, report the job as not-run. Never "
-            f"fabricate a model or a score."),
+            f"Call list_fold_jobs, and for each job whose tool is '{tool}': call "
+            f"build_fold_notebook with tool='{tool}' to write that job's self-contained "
+            f".ipynb and get its path, then drive it with the mcp__playwright tools: "
+            f"upload the notebook to Colab, connect a GPU runtime, run the cells (inputs "
+            f"are embedded), wait, download the produced model, then call "
+            f"record_fold_result with tool='{tool}' and the downloaded path. The loop is "
+            f"resumable; skip jobs already recorded. If build_fold_notebook returns a "
+            f"fail-loud scaffold (the {tool} adapter is not yet wired) or the Colab run "
+            f"errors, report the job as not-run. Never fabricate a model or a score."),
         tools=list(_EXEC_TOOLS),
         model="sonnet",
     )
@@ -81,7 +83,8 @@ def build_options(run_dir):
             "Agent",
             "mcp__rep2struct__ingest_repertoire", "mcp__rep2struct__annotate_specificity",
             "mcp__rep2struct__prep_and_select", "mcp__rep2struct__list_structure_tools",
-            "mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__record_fold_result",
+            "mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__build_fold_notebook",
+            "mcp__rep2struct__record_fold_result",
             "mcp__rep2struct__qc_structure", "mcp__rep2struct__render_final_report",
             "mcp__playwright__*",
         ],

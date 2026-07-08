@@ -172,6 +172,34 @@ def test_qc_structure_dispatches_peptide_groove_for_mhcfine(tmp_path, monkeypatc
     assert stored[0]["tool"] == "mhcfine" and stored[0]["calibration_basis"] == "pose_quality"
 
 
+def test_build_fold_notebook_writes_wired_mhcfine_ipynb(tmp_path):
+    import json
+    from rep2struct.runstate import RunState
+    from rep2struct.schema import FoldJob
+    rd = str(tmp_path / "run")
+    fasta = ">A\nAAAA\n>B\nBBBB\n>C\nCCCCMHC\n>D\nDDDD\n>E\nSIINFEKL\n"
+    RunState(rd).write_stage("foldjobs", [FoldJob(clonotype_id="c1", construct_fasta=fasta)])
+    res = _call(at.build_fold_notebook, {"run_dir": rd, "clonotype_id": "c1", "tool": "mhcfine"})
+    path = res["structuredContent"]["notebook_path"]
+    assert Path(path).exists()
+    nb = json.loads(Path(path).read_text())
+    assert nb["nbformat"] == 4
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "NotImplementedError" not in src          # mhcfine is wired
+    assert "SIINFEKL" in src and "CCCCMHC" in src      # MHC heavy + peptide embedded
+    assert "c1_cognate" in src and "c1_scramble" in src  # keys prefixed by clonotype id
+    assert "numpy<2" in src and "kalign" in src        # validated recipe carried through
+
+
+def test_build_fold_notebook_unknown_job_is_reported(tmp_path):
+    from rep2struct.runstate import RunState
+    RunState(str(tmp_path / "run")).write_stage("foldjobs", [])
+    res = _call(at.build_fold_notebook, {"run_dir": str(tmp_path / "run"),
+                                         "clonotype_id": "nope", "tool": "mhcfine"})
+    assert "no fold job" in res["content"][0]["text"].lower()
+    assert "structuredContent" not in res
+
+
 def test_prep_and_select_stamps_group_id(tmp_path):
     from rep2struct.runstate import RunState
     from rep2struct.schema import Clonotype, Annotation

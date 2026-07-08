@@ -158,9 +158,19 @@ masked_plddt DELTA (not an absolute threshold), validated on more pairs.
 (no longer a NotImplementedError stub): clone, deps+kalign BEFORE import (numpy<2, no
 restart), weights + chmod msa_run, then a fold loop over INPUTS
 ({key: {protein_sequence, peptide_sequence}}, e.g. cognate + scramble) writing
-./output/{key}.pdb. Other tools (tcrdock/affinetune/af3) keep the fail-loud stub. Suite
-102/102. STILL PENDING (executor plumbing, not the adapter): expose build_notebook to the
-mhcfine executor (an MCP tool writing the .ipynb to the run dir, or prep stamping it per
-job) plus the Playwright upload/run/download drive; and per-clonotype output keys (the
-adapter uses the caller's INPUTS keys, so a single VM reused across clonotypes would need
-clonotype-prefixed keys to avoid output/{key}.pdb collisions).
+./output/{key}.pdb. Other tools (tcrdock/affinetune/af3) keep the fail-loud stub. Suite 102/102.
+
+## Step 5: adapter EXPOSED to the executor (DONE, branch feat/expose-mhcfine-notebook)
+
+MCP tool `build_fold_notebook(run_dir, clonotype_id, tool)`: loads the clonotype's FoldJob,
+shapes the tool inputs (mhcfine -> mhcfine_inputs.build(construct_fasta), keys PREFIXED by
+clonotype id so per-clonotype output/{cid}_cognate.pdb never collide), calls build_notebook,
+writes `<run_dir>/notebooks/{cid}_{tool}.ipynb`, returns the path. Wired into the
+mhcfine-agent executor (tool added to its allowed set + prompt: list_fold_jobs ->
+build_fold_notebook -> Playwright upload/run/download -> record_fold_result; report not-run
+on a fail-loud scaffold or a Colab error). Suite 104/104.
+
+STILL PENDING (live drive only, no more offline code): run the mhcfine-agent end to end on
+a real Colab session to confirm the Playwright upload/run/download loop. Env caveat: the run
+dir must sit under a Playwright-allowed root (e.g. /Users/fzd181) for the browser file
+upload, and the Step 2 monaco/clipboard + iframe-read lessons apply to the live drive.

@@ -35,6 +35,7 @@ def test_every_executor_exact_tools_and_model():
         ex = agents[name]
         assert ex.model == "sonnet"
         assert set(ex.tools) == {"mcp__rep2struct__list_fold_jobs",
+                                 "mcp__rep2struct__build_fold_notebook",
                                  "mcp__rep2struct__record_fold_result",
                                  "mcp__playwright__*"}
 
