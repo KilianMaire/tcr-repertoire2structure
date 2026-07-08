@@ -78,3 +78,29 @@ def test_render_final_report(tmp_path):
 def test_build_server():
     server = at.build_server()
     assert server["name"] == "rep2struct"
+
+
+def test_list_structure_tools_returns_registry():
+    res = _run(at.list_structure_tools.handler({"run_dir": "/tmp/whatever"}))
+    names = {t["name"] for t in res["structuredContent"]["tools"]}
+    assert names == {"protenix", "af3", "mhcfine", "tcrdock", "affinetune"}
+
+
+def test_prep_and_select_stamps_group_id(tmp_path):
+    from rep2struct.runstate import RunState
+    from rep2struct.schema import Clonotype, Annotation
+    rd = str(tmp_path / "run")
+    clon = Clonotype(id="c1", trav="TRAV1", cdr3a="CAA", trbv="TRBV2", cdr3b="CAB",
+                     size=5, traj="TRAJ1", trbj="TRBJ1")
+    ann = Annotation(clonotype_id="c1", annotatable=True, confidence_tier="high",
+                     epitope="SIINFEKL", hla="A*02:01")
+    RunState(rd).write_stage("ingest", [clon])
+    RunState(rd).write_stage("annotate", [ann])
+    at.configure(assign_fn=lambda c: c)  # no allele network call
+    try:
+        _run(at.prep_and_select.handler({"run_dir": rd, "top_n": 5}))
+    finally:
+        at.configure()
+    jobs = RunState(rd).read_stage("foldjobs")
+    assert jobs and all(j["group_id"] == "c1_tcr_human_structure" for j in jobs)
+    assert jobs and all(j["msa_ref"] == "" for j in jobs)  # no runners injected -> MSA-free default; locks the build_msa stamping loop

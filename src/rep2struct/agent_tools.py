@@ -10,6 +10,9 @@ from .seqs import build_tcr_seqs, build_mhc_seqs
 from .qc import score_model, verdict
 from .report import render_report
 from .schema import Clonotype, Annotation, QCResult
+from . import structure_tools
+from .grouping import partition
+from .msa import build_msa
 
 _CFG = {"sim_fn": None, "assign_fn": None}
 
@@ -73,6 +76,9 @@ async def prep_and_select(args):
     seqs = build_tcr_seqs([c for c, _ in foldable])
     mhc = build_mhc_seqs(sorted({a.hla for _, a in foldable}))
     jobs = [build_construct(c, a, seqs, mhc) for c, a in foldable if a.hla in mhc]
+    partition(jobs)  # stamps group_id on each job in place
+    for j in jobs:   # MSA is a pre-fold artifact; no runners here = MSA-free default
+        j.msa_ref, _ = build_msa(j, args["run_dir"])
     RunState(args["run_dir"]).write_stage("foldjobs", jobs)
     r = _txt(f"prepared {len(jobs)} fold jobs")
     r["structuredContent"] = {"jobs": [j.clonotype_id for j in jobs]}
@@ -86,6 +92,14 @@ async def list_fold_jobs(args):
     jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
     r = _txt(f"{len(jobs)} jobs")
     r["structuredContent"] = {"jobs": jobs}
+    return r
+
+
+@tool("list_structure_tools", "List the structure tools and their validity domains for the strategist.",
+      {"run_dir": str})
+async def list_structure_tools(args):
+    r = _txt("structure tool registry")
+    r["structuredContent"] = {"tools": structure_tools.as_dicts()}
     return r
 
 
@@ -138,5 +152,5 @@ async def render_final_report(args):
 def build_server():
     return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
         ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
-        record_fold_result, qc_structure, render_final_report,
+        list_structure_tools, record_fold_result, qc_structure, render_final_report,
     ])
