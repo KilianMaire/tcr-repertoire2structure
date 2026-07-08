@@ -94,7 +94,7 @@ def mean_confidence(bfactors):
 def verdict_groove(pose_atoms, threshold: float, clonotype_id: str, tool: str,
                    confidence=None) -> QCResult:
     if pose_atoms is None:
-        return QCResult(clonotype_id, "qc_failed", "no MHC-peptide pose to score", tool=tool)
+        return QCResult(clonotype_id, "pose_failed", "no MHC-peptide pose to score", tool=tool)
     ok = pose_atoms > threshold
     reason = (f"pose: peptide in groove contact {pose_atoms:.0f} "
               f"{'beats' if ok else 'not above'} scramble null; "

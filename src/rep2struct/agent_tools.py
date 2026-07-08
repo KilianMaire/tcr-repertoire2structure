@@ -129,15 +129,19 @@ async def qc_structure(args):
     metric = structure_tools.qc_metric_for(tool)   # tool decides, not the agent
     if not paths:
         res = QCResult(args["clonotype_id"], "qc_failed", "no model recorded", tool=tool)
+        validity_summary = "no model"
     elif metric == "binding_score":
         score = float(Path(paths[0]).read_text().strip())
         res = verdict_binding(score, args["scramble_threshold"], args["clonotype_id"], tool=tool)
+        validity_summary = "n/a (binding score)"
     else:
         expected = {"A", "B", "C", "D", "E"} if metric == "cdr3_peptide" else {"C", "D", "E"}
         chains = load_chains(paths[0])
         cc = common_checks(chains, expected)
+        validity_summary = "valid" if cc["ok"] else "; ".join(cc["issues"])
         if not cc["ok"]:
-            res = QCResult(args["clonotype_id"], "qc_failed",
+            failed = "pose_failed" if metric == "peptide_groove" else "qc_failed"
+            res = QCResult(args["clonotype_id"], failed,
                            "; ".join(cc["issues"]), tool=tool)
         elif metric == "peptide_groove":
             res = verdict_groove(score_pose(chains), args["scramble_threshold"],
@@ -152,6 +156,9 @@ async def qc_structure(args):
     qcs = [q for q in qcs if q["clonotype_id"] != res.clonotype_id]
     qcs.append(asdict(res))
     rs.write_stage("qc", qcs)
+    validity = rs.read_stage("validity") if rs.stage_done("validity") else {}
+    validity[args["clonotype_id"]] = validity_summary
+    rs.write_stage("validity", validity)
     r = _txt(f"{res.clonotype_id}: {res.qc_verdict} ({res.reason})")
     r["structuredContent"] = {"qc_verdict": res.qc_verdict, "reason": res.reason}
     return r
@@ -166,7 +173,8 @@ async def render_final_report(args):
     qcs = [QCResult(**d) for d in (rs.read_stage("qc") if rs.stage_done("qc") else [])]
     fjs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
     msa_basis = {j["clonotype_id"]: j.get("msa_basis") for j in fjs}
-    html = render_report(clons, anns, qcs, msa_basis=msa_basis)
+    validity = rs.read_stage("validity") if rs.stage_done("validity") else {}
+    html = render_report(clons, anns, qcs, msa_basis=msa_basis, validity=validity)
     out = Path(args["run_dir"]) / "report.html"
     out.write_text(html)
     r = _txt(f"report written to {out}")

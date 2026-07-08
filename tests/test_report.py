@@ -85,3 +85,23 @@ def test_render_report_validity_is_optional():
     c, a = _fixtures()
     q = QCResult("c1", "reliable", "ok", tool="protenix")
     render_report(c, a, [q])  # must not raise without validity
+
+
+def test_pose_failed_row_labelled_pose_not_structure():
+    c, a = _fixtures()
+    q = QCResult("c1", "pose_failed", "no MHC-peptide pose to score", tool="mhcfine")
+    html = render_report(c, a, [q])
+    row = re.search(r"<tr[^>]*>.*?mhcfine.*?</tr>", html, re.S)
+    assert row, "no table row rendered for the mhcfine result"
+    block = row.group(0).lower()
+    assert "pose" in block
+    assert "structure" not in block and "fold" not in block
+
+
+def test_qc_failed_row_for_structure_tools_still_says_structure():
+    c, a = _fixtures()
+    q = QCResult("c1", "qc_failed", "model has 3 chains, need 5", tool="protenix")
+    html = render_report(c, a, [q])
+    row = re.search(r"<tr[^>]*>.*?protenix.*?</tr>", html, re.S)
+    assert row, "no table row rendered for the protenix result"
+    assert "structure (qc failed)" in row.group(0).lower()

@@ -143,7 +143,9 @@ def test_qc_structure_common_gate_fails_closed_on_missing_chains(tmp_path):
     res = _run(at.qc_structure.handler(
         {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": 1.0,
          "output_type": "structure", "tool": "mhcfine"}))
-    assert res["structuredContent"]["qc_verdict"] == "qc_failed"
+    # mhcfine's qc_metric is peptide_groove, so a common-gate failure is an honest
+    # pose_failed (never "structure (qc failed)") -- see follow-up B.
+    assert res["structuredContent"]["qc_verdict"] == "pose_failed"
 
 
 def test_qc_structure_dispatches_peptide_groove_for_mhcfine(tmp_path, monkeypatch):
@@ -189,3 +191,31 @@ def test_prep_and_select_stamps_group_id(tmp_path):
     assert jobs and all(j["group_id"] == "c1_tcr_human_structure" for j in jobs)
     assert jobs and all(j["msa_ref"] == "" for j in jobs)  # no runners injected -> MSA-free default; locks the build_msa stamping loop
     assert all(j["msa_basis"] == "none" for j in jobs)
+
+
+def test_qc_persists_validity_summary_for_structure(tmp_path, monkeypatch):
+    import numpy as np
+    from rep2struct import qc
+    from rep2struct.runstate import RunState
+    rd = str(tmp_path / "run")
+    cif = tmp_path / "c1.cif"; cif.write_text("x")
+    _run(at.record_fold_result.handler({"run_dir": rd, "clonotype_id": "c1",
+        "model_paths": [str(cif)], "tool": "mhcfine"}))
+    chains = {"C": np.array([[0, 0, 0], [20, 0, 0]], float),
+              "D": np.array([[50, 0, 0]], float),
+              "E": np.array([[1, 0, 0], [2, 0, 0]], float)}
+    monkeypatch.setattr(qc, "load_chains", lambda p: chains)
+    _run(at.qc_structure.handler({"run_dir": rd, "clonotype_id": "c1",
+        "scramble_threshold": 0.5, "output_type": "structure", "tool": "mhcfine"}))
+    assert RunState(rd).read_stage("validity")["c1"] == "valid"
+
+
+def test_qc_persists_validity_na_for_binding_score(tmp_path):
+    from rep2struct.runstate import RunState
+    rd = str(tmp_path / "run")
+    score_path = tmp_path / "c1.score"; score_path.write_text("0.9")
+    _run(at.record_fold_result.handler({"run_dir": rd, "clonotype_id": "c1",
+        "model_paths": [str(score_path)], "tool": "affinetune"}))
+    _run(at.qc_structure.handler({"run_dir": rd, "clonotype_id": "c1",
+        "scramble_threshold": 0.5, "output_type": "binding_score", "tool": "affinetune"}))
+    assert RunState(rd).read_stage("validity")["c1"] == "n/a (binding score)"

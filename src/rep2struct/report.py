@@ -14,6 +14,7 @@ EVIDENCE = {
     "not_presented": "predicted presentation",
     "pose_reliable": "pose (peptide in groove)",
     "pose_suspect": "pose (peptide in groove)",
+    "pose_failed": "pose (qc failed)",
 }
 
 def _msa_note(basis) -> str:

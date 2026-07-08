@@ -102,4 +102,6 @@ def test_verdict_groove_is_a_pose_not_a_fold():
         for bad in ("fold", "structure", "recognition"):
             assert bad not in r.reason.lower()
     assert hi.tool == "mhcfine" and hi.calibration_basis == "groove_scramble_null"
-    assert verdict_groove(None, 10.0, "c3", tool="mhcfine").qc_verdict == "qc_failed"
+    none_verdict = verdict_groove(None, 10.0, "c3", tool="mhcfine")
+    assert none_verdict.qc_verdict == "pose_failed"
+    assert "pose" in none_verdict.reason.lower()
