@@ -118,6 +118,22 @@ output read as "confirms recognition". mhcfine is a POSE, full stop. If a discri
 wanted later, the candidate is a per-pair cognate-vs-scramble masked_plddt DELTA (not an
 absolute cutoff), validated on more pairs.
 
+## Paper replication check (pose accuracy vs crystal, 2026-07-08)
+
+Distinct question from the scramble control. The MHC-Fine paper (PMC10705405) benchmarks
+peptide POSE ACCURACY (backbone RMSD vs the experimental structure) on known binders, and
+reports a median around 0.66 A. We folded 6VRN's real peptide (HMTEVVRHC) and compared our
+pose to the 6VRN crystal (RCSB): superpose on the MHC (182 shared CA, MHC CA RMSD 0.563 A),
+then peptide backbone(N,CA,C,O) RMSD = 0.542 A, CA-only 0.507 A. That REPLICATES the
+paper's accuracy (slightly better on this case) and confirms our pipeline drives MHC-Fine
+correctly.
+
+This does NOT conflict with the scramble result. The paper claims accurate poses for
+binders; it never claims to tell binders from non-binders. Our scramble control adds the
+orthogonal QC fact: MHC-Fine seats a non-binder in the groove just as confidently, so the
+pose alone is not evidence of specificity. Paper = "places a binder accurately"; R2S QC =
+"...and places a non-binder just as well, so a pose is not proof". Complementary.
+
 ## Step 3: QC + calibration (superseded by LIVE RUN 2 above)
 
 mhcfine `qc_metric = peptide_groove`. LIVE RUN 2 showed groove-contact and plddt both fail
