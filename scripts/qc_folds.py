@@ -15,22 +15,27 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+import numpy as np
 from rep2struct.qc import score_model
 from rep2struct.report import render_report
 from rep2struct.runstate import RunState
 from rep2struct.schema import Clonotype, Annotation, QCResult
 
 
-def find_cif(fold_dir: Path):
-    """Pick one representative model CIF under a Protenix output dir."""
+def ensemble_contact(fold_dir: Path):
+    """Mean CDR3(Vbeta) to peptide contact across ALL Protenix samples for one
+    construct. Protenix emits several samples per seed whose docking pose varies
+    a lot, so a single sample is not representative; the ensemble mean is. Returns
+    (mean, n_models, n_valid) or (None, 0, 0) if no 5-chain model parsed."""
     cifs = sorted(fold_dir.rglob("*.cif"))
-    if not cifs:
-        return None
-    # prefer a rank/sample 0 model if present, else the first
+    vals = []
     for c in cifs:
-        if "model_0" in c.name or "sample_0" in c.name or "rank_1" in c.name:
-            return c
-    return cifs[0]
+        v = score_model(c).get("cdr3_pep_atoms")
+        if v is not None:
+            vals.append(v)
+    if not vals:
+        return None, len(cifs), 0
+    return float(np.mean(vals)), len(cifs), len(vals)
 
 
 def main():
@@ -46,30 +51,20 @@ def main():
 
     qcs = []
     for cid in job_ids:
-        cog = find_cif(folds_dir / "out" / f"{cid}_cognate")
-        scr = find_cif(folds_dir / "out" / f"{cid}_scramble")
+        cog, ncog, _ = ensemble_contact(folds_dir / "out" / f"{cid}_cognate")
         if cog is None:
-            qcs.append(QCResult(cid, "qc_failed", "no cognate model produced"))
+            qcs.append(QCResult(cid, "qc_failed",
+                                "no cognate model produced (fold pending or <5 chains)"))
             continue
-        cs = score_model(cog); cs["clonotype_id"] = cid
-        if cs.get("cdr3_pep_atoms") is None:
-            qcs.append(QCResult(cid, "qc_failed", f"cognate has {cs.get('n_chains')} chains, need 5"))
-            continue
-        scr_atoms = None
-        if scr is not None:
-            ss = score_model(scr)
-            scr_atoms = ss.get("cdr3_pep_atoms")
-        # per-clonotype scramble calibration: cognate must beat its own scramble
-        thr = scr_atoms if scr_atoms is not None else 0.0
-        if cs["cdr3_pep_atoms"] > thr:
-            qcs.append(QCResult(cid, "reliable",
-                                f"Vbeta-peptide contact {cs['cdr3_pep_atoms']:.0f} > scramble {thr:.0f}",
-                                cdr3_pep_atoms=cs["cdr3_pep_atoms"]))
-        else:
-            qcs.append(QCResult(cid, "suspect",
-                                f"Vbeta-peptide contact {cs['cdr3_pep_atoms']:.0f} <= scramble {thr:.0f}",
-                                cdr3_pep_atoms=cs["cdr3_pep_atoms"]))
-        print(f"{cid}: cognate={cs['cdr3_pep_atoms']:.0f} scramble={thr:.0f} -> {qcs[-1].qc_verdict}")
+        scr, _, _ = ensemble_contact(folds_dir / "out" / f"{cid}_scramble")
+        thr = scr if scr is not None else 0.0
+        # scramble-calibrated verdict on the ensemble mean. The scramble contact
+        # is typically non-zero (Protenix imposes docking geometry on any
+        # peptide); a cognate is reliable only when it beats that null.
+        reason = f"cognate {cog:.0f} vs scramble {thr:.0f} mean Vbeta-peptide contact ({ncog} models)"
+        verdict = "reliable" if cog > thr else "suspect"
+        qcs.append(QCResult(cid, verdict, reason, cdr3_pep_atoms=cog))
+        print(f"{cid}: cognate={cog:.0f} scramble={thr:.0f} -> {verdict}")
 
     html = render_report(clons, anns, qcs, metrics=None)
     Path(out_html).write_text(html)
