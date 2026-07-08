@@ -35,3 +35,19 @@ def test_is_covered_true_for_structure_false_when_no_match():
 def test_as_dicts_is_json_safe():
     import json
     json.dumps(st.as_dicts())  # must not raise
+
+
+def test_qc_metric_per_tool():
+    by = {t.name: t.qc_metric for t in st.REGISTRY}
+    assert by == {"protenix": "cdr3_peptide", "tcrdock": "cdr3_peptide",
+                  "mhcfine": "peptide_groove", "affinetune": "binding_score",
+                  "af3": "cdr3_peptide"}
+
+
+def test_qc_metric_for_defaults():
+    assert st.qc_metric_for("mhcfine") == "peptide_groove"
+    assert st.qc_metric_for("unknown") == "cdr3_peptide"
+
+
+def test_as_dicts_exposes_qc_metric():
+    assert all("qc_metric" in d for d in st.as_dicts())
