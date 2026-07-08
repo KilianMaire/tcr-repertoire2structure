@@ -8,13 +8,8 @@ from .fold import run_folds
 from .qc import score_model, verdict
 from .report import render_report
 from .validate import annotation_metrics
+from .seqs import build_tcr_seqs, build_mhc_seqs
 from .schema import QCResult
-
-
-def _tcr_seq_stub(clonotype):
-    # placeholder chain sequences: real runs use reconstructed V domains from
-    # TCR Explorer. For the construct we need any residues; use the CDR3s padded.
-    return {"A": "G" * 10 + clonotype.cdr3a, "B": "G" * 10 + clonotype.cdr3b}
 
 
 def run_pipeline(csv_path, run_dir, top_n, sim_fn=None, assign_fn=None, fold_fn=None,
@@ -34,8 +29,13 @@ def run_pipeline(csv_path, run_dir, top_n, sim_fn=None, assign_fn=None, fold_fn=
     # the report as "not folded".
     foldable = [(c, a) for c, a in top if a.annotatable and a.hla]
 
-    seqs = tcr_seqs or {c.id: _tcr_seq_stub(c) for c, _ in foldable}
-    jobs = [build_construct(c, a, seqs, mhc_seqs) for c, a in foldable]
+    # Real V domains (reconstructed from V/J germline + CDR3) and real MHC
+    # ectodomains (fetched + cached from IPD/IMGT-HLA), unless the caller
+    # injected sequences (offline tests do). build_mhc_seqs may omit an HLA it
+    # cannot resolve, so fold only clonotypes whose HLA has a heavy chain.
+    seqs = tcr_seqs or build_tcr_seqs([c for c, _ in foldable])
+    mhc = mhc_seqs or build_mhc_seqs(sorted({a.hla for _, a in foldable}))
+    jobs = [build_construct(c, a, seqs, mhc) for c, a in foldable if a.hla in mhc]
     jobs = run_folds(jobs, fold_fn, rs)
 
     qcs = []

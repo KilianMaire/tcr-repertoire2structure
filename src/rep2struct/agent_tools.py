@@ -6,6 +6,7 @@ from .runstate import RunState
 from .ingest import parse_10x, standardize_alleles
 from .annotate import annotate
 from .foldprep import select_top, build_construct
+from .seqs import build_tcr_seqs, build_mhc_seqs
 from .qc import score_model, verdict
 from .report import render_report
 from .schema import Clonotype, Annotation, QCResult
@@ -28,10 +29,6 @@ def _txt(s):
 def _load(rd, name, cls):
     rs = RunState(rd)
     return [cls(**d) for d in rs.read_stage(name)] if rs.stage_done(name) else []
-
-
-def _tcr_seq_stub(clonotype):
-    return {"A": "G" * 10 + clonotype.cdr3a, "B": "G" * 10 + clonotype.cdr3b}
 
 
 @tool("ingest_repertoire", "Parse a 10x contig CSV into paired clonotypes and persist them.",
@@ -70,9 +67,12 @@ async def prep_and_select(args):
     # to foldable entries before building constructs. Filtered-out
     # clonotypes simply get no fold job.
     foldable = [(c, a) for c, a in top if a.annotatable and a.hla]
-    seqs = {c.id: _tcr_seq_stub(c) for c, _ in foldable}
-    mhc = {a.hla: {"heavy": "H" * 20, "b2m": "M" * 20} for _, a in foldable}
-    jobs = [build_construct(c, a, seqs, mhc) for c, a in foldable]
+    # Real reconstructed V domains and fetched/cached MHC ectodomains (same
+    # providers as pipeline.run_pipeline). Clonotypes whose HLA cannot be
+    # resolved to a heavy chain get no fold job.
+    seqs = build_tcr_seqs([c for c, _ in foldable])
+    mhc = build_mhc_seqs(sorted({a.hla for _, a in foldable}))
+    jobs = [build_construct(c, a, seqs, mhc) for c, a in foldable if a.hla in mhc]
     RunState(args["run_dir"]).write_stage("foldjobs", jobs)
     r = _txt(f"prepared {len(jobs)} fold jobs")
     r["structuredContent"] = {"jobs": [j.clonotype_id for j in jobs]}

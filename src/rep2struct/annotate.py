@@ -12,7 +12,15 @@ def _tier(distance, tiers):
 
 def _default_sim(cdr3_a, v_a, cdr3_b, v_b, species="human", top_k=5):
     from tcr_explorer.similarity import find_similar_paired_tcrs
-    return find_similar_paired_tcrs(cdr3_a, v_a, cdr3_b, v_b, species=species, top_k=top_k)
+    neigh, engine, total, warns = find_similar_paired_tcrs(
+        cdr3_a, v_a, cdr3_b, v_b, species=species, top_k=top_k)
+    # find_similar_paired_tcrs returns pydantic PairedNeighbour objects with
+    # fields (distance, epitope_aa, mhc_a, antigen, ...). annotate consumes a
+    # dict keyed epitope/mhc/antigen/distance, so map them here. Keeping the
+    # dict contract lets the offline fakes stay plain dicts.
+    dicts = [{"distance": n.distance, "epitope": n.epitope_aa,
+              "mhc": n.mhc_a, "antigen": n.antigen} for n in neigh]
+    return dicts, engine, total, warns
 
 def annotate(clonotypes, sim_fn=None, tiers=DEFAULT_TIERS):
     fn = sim_fn or _default_sim

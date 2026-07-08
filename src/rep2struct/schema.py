@@ -12,6 +12,8 @@ class Clonotype:
     size: int                    # cell count
     trav_allele: Optional[str] = None
     trbv_allele: Optional[str] = None
+    traj: Optional[str] = None   # J genes, needed to reconstruct the V domain
+    trbj: Optional[str] = None
 
 @dataclass
 class Annotation:
