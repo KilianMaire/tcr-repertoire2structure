@@ -5,8 +5,9 @@ from .schema import QCResult
 
 def _heavy_by_chain(cif_path):
     from Bio.PDB import MMCIFParser
-    warnings.simplefilter("ignore")
-    m = next(MMCIFParser(QUIET=True).get_structure("x", str(cif_path)).get_models())
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        m = next(MMCIFParser(QUIET=True).get_structure("x", str(cif_path)).get_models())
     out = {}
     for ch in m:
         atoms = [a.coord for r in ch for a in r if a.element != "H"]
