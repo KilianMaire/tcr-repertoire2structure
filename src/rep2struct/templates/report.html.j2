@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Repertoire2Structure report</title>
+<style>
+ body{font-family:system-ui,sans-serif;margin:2rem;color:#1f2933}
+ table{border-collapse:collapse;width:100%} th,td{border:1px solid #cbd5e0;padding:.4rem .6rem;text-align:left}
+ .reliable{color:#2f855a;font-weight:600} .suspect{color:#c05621;font-weight:600} .qc_failed{color:#718096}
+ .unann{color:#718096;font-style:italic} .val{background:#f0fff4;border:1px solid #2f855a;padding:1rem;margin:1rem 0;border-radius:8px}
+</style></head><body>
+<h1>Repertoire2Structure report</h1>
+{% if metrics %}<div class="val"><b>Validation.</b>
+ precision {{ '%.2f'|format(metrics.precision) }},
+ recall {{ '%.2f'|format(metrics.recall) }},
+ unannotatable rate {{ '%.2f'|format(metrics.unannotatable_rate) }}
+ (n={{ metrics.n }})</div>{% endif %}
+<table><thead><tr><th>clonotype</th><th>size</th><th>epitope</th><th>tier</th><th>QC</th></tr></thead><tbody>
+{% for row in rows %}<tr>
+ <td>{{ row.id }}</td><td>{{ row.size }}</td>
+ <td>{% if row.annotatable %}{{ row.epitope }} <small>({{ row.hla }})</small>{% else %}<span class="unann">unannotatable</span>{% endif %}</td>
+ <td>{{ row.tier }}</td>
+ <td class="{{ row.qc }}">{{ row.qc }}</td>
+</tr>{% endfor %}
+</tbody></table>
+<p><small>Specificity is annotation by similarity, not confirmed binding. A predicted structure does not confirm specificity.</small></p>
+</body></html>
