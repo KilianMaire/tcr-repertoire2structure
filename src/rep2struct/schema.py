@@ -39,6 +39,7 @@ class FoldJob:
     output_needed: str = "structure"   # structure | binding_score
     tool: Optional[str] = None   # tool the strategist assigned
     group_id: Optional[str] = None
+    msa_basis: Optional[str] = None   # local | colab_cpu | none
 
 @dataclass
 class QCResult:

@@ -78,7 +78,7 @@ async def prep_and_select(args):
     jobs = [build_construct(c, a, seqs, mhc) for c, a in foldable if a.hla in mhc]
     partition(jobs)  # stamps group_id on each job in place
     for j in jobs:   # MSA is a pre-fold artifact; no runners here = MSA-free default
-        j.msa_ref, _ = build_msa(j, args["run_dir"])
+        j.msa_ref, j.msa_basis = build_msa(j, args["run_dir"])
     RunState(args["run_dir"]).write_stage("foldjobs", jobs)
     r = _txt(f"prepared {len(jobs)} fold jobs")
     r["structuredContent"] = {"jobs": [j.clonotype_id for j in jobs]}
@@ -154,7 +154,9 @@ async def render_final_report(args):
     anns = _load(args["run_dir"], "annotate", Annotation)
     rs = RunState(args["run_dir"])
     qcs = [QCResult(**d) for d in (rs.read_stage("qc") if rs.stage_done("qc") else [])]
-    html = render_report(clons, anns, qcs)
+    fjs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
+    msa_basis = {j["clonotype_id"]: j.get("msa_basis") for j in fjs}
+    html = render_report(clons, anns, qcs, msa_basis=msa_basis)
     out = Path(args["run_dir"]) / "report.html"
     out.write_text(html)
     r = _txt(f"report written to {out}")

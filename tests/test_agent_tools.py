@@ -151,3 +151,4 @@ def test_prep_and_select_stamps_group_id(tmp_path):
     jobs = RunState(rd).read_stage("foldjobs")
     assert jobs and all(j["group_id"] == "c1_tcr_human_structure" for j in jobs)
     assert jobs and all(j["msa_ref"] == "" for j in jobs)  # no runners injected -> MSA-free default; locks the build_msa stamping loop
+    assert all(j["msa_basis"] == "none" for j in jobs)

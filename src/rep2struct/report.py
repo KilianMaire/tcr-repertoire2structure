@@ -14,9 +14,16 @@ EVIDENCE = {
     "not_presented": "predicted presentation",
 }
 
-def render_report(clonotypes, annotations, qc_results, metrics=None) -> str:
+def _msa_note(basis) -> str:
+    if basis in ("local", "colab_cpu"):
+        return f"MSA {basis}"
+    return "MSA-free (reduced confidence)"
+
+
+def render_report(clonotypes, annotations, qc_results, metrics=None, msa_basis=None) -> str:
     ann = {a.clonotype_id: a for a in annotations}
     qc = {q.clonotype_id: q for q in qc_results}
+    msa_basis = msa_basis or {}
     rows = []
     # Keep clonotype input order; never sort by a raw numeric field
     # (e.g. cdr3_pep_atoms) so distances are never presented as a ranking.
@@ -32,6 +39,7 @@ def render_report(clonotypes, annotations, qc_results, metrics=None) -> str:
             "qc": q.qc_verdict if q else "not folded",
             "tool": q.tool if q else None,
             "evidence": EVIDENCE.get(q.qc_verdict, "structure") if q else "n/a",
+            "msa_note": _msa_note(msa_basis.get(c.id)) if q else None,
         })
     env = Environment(loader=FileSystemLoader(str(_TPL_DIR)),
                       autoescape=select_autoescape(["html"]))

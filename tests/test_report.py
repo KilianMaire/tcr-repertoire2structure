@@ -43,3 +43,16 @@ def test_binding_row_not_called_a_structure_or_fold():
     html = render_report(c, a, [q])
     row = [ln for ln in html.splitlines() if "affinetune" in ln]
     assert row and all("fold" not in ln.lower() and "structure" not in ln.lower() for ln in row)
+
+
+def test_msa_free_row_flagged_reduced_confidence():
+    c, a = _fixtures()   # reuse the existing helper in this file
+    q = QCResult("c1", "reliable", "ok", tool="protenix", calibration_basis="scramble_null")
+    html = render_report(c, a, [q], msa_basis={"c1": "none"})
+    assert "reduced confidence" in html.lower()
+
+
+def test_render_report_msa_basis_is_optional():
+    c, a = _fixtures()
+    q = QCResult("c1", "reliable", "ok", tool="protenix")
+    render_report(c, a, [q])  # must not raise without msa_basis
