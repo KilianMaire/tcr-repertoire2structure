@@ -12,12 +12,14 @@
  recall {{ '%.2f'|format(metrics.recall) }},
  unannotatable rate {{ '%.2f'|format(metrics.unannotatable_rate) }}
  (n={{ metrics.n }})</div>{% endif %}
-<table><thead><tr><th>clonotype</th><th>size</th><th>epitope</th><th>tier</th><th>QC</th></tr></thead><tbody>
+<table><thead><tr><th>clonotype</th><th>size</th><th>epitope</th><th>tier</th><th>QC</th><th>Evidence</th><th>Tool</th></tr></thead><tbody>
 {% for row in rows %}<tr>
  <td>{{ row.id }}</td><td>{{ row.size }}</td>
  <td>{% if row.annotatable %}{{ row.epitope }} <small>({{ row.hla }})</small>{% else %}<span class="unann">unannotatable</span>{% endif %}</td>
  <td>{{ row.tier }}</td>
  <td class="{{ row.qc }}">{{ row.qc }}</td>
+ <td>{{ row.evidence }}</td>
+ <td>{{ row.tool or "" }}</td>
 </tr>{% endfor %}
 </tbody></table>
 <p><small>Specificity is annotation by similarity, not confirmed binding. A predicted structure does not confirm specificity.</small></p>

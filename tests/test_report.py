@@ -18,3 +18,28 @@ def test_unannotatable_is_shown():
     qcs = []
     html = render_report(clons, anns, qcs)
     assert "unannotatable" in html
+
+
+def _fixtures():
+    c = Clonotype(id="c1", trav="TRAV1", cdr3a="CAA", trbv="TRBV2", cdr3b="CAB", size=5)
+    a = Annotation(clonotype_id="c1", annotatable=True, confidence_tier="high",
+                   epitope="SIINFEKL", hla="A*02:01")
+    return [c], [a]
+
+
+def test_binding_row_is_labelled_predicted_presentation():
+    c, a = _fixtures()
+    q = QCResult("c1", "presented", "predicted presentation above the score null",
+                 tool="affinetune", calibration_basis="binding_score_null")
+    html = render_report(c, a, [q])
+    assert "predicted presentation" in html.lower()
+    assert "affinetune" in html
+
+
+def test_binding_row_not_called_a_structure_or_fold():
+    c, a = _fixtures()
+    q = QCResult("c1", "presented", "predicted presentation above the score null",
+                 tool="affinetune")
+    html = render_report(c, a, [q])
+    row = [ln for ln in html.splitlines() if "affinetune" in ln]
+    assert row and all("fold" not in ln.lower() and "structure" not in ln.lower() for ln in row)
