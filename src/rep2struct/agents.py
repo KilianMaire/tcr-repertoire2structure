@@ -15,12 +15,17 @@ def _executor(name, tool):
             f"Call list_fold_jobs, and for each job whose tool is '{tool}': call "
             f"build_fold_notebook with tool='{tool}' to write that job's self-contained "
             f".ipynb and get its path, then drive it with the mcp__playwright tools: "
-            f"upload the notebook to Colab, connect a GPU runtime, run the cells (inputs "
-            f"are embedded), wait, download the produced model, then call "
-            f"record_fold_result with tool='{tool}' and the downloaded path. The loop is "
-            f"resumable; skip jobs already recorded. If build_fold_notebook returns a "
-            f"fail-loud scaffold (the {tool} adapter is not yet wired) or the Colab run "
-            f"errors, report the job as not-run. Never fabricate a model or a score."),
+            f"upload the notebook to Colab, connect a GPU runtime, then run the cells by "
+            f"KEYBOARD SHORTCUT (focus a cell and press Ctrl+Enter, or Shift+Enter to run "
+            f"and advance through all cells) because the Run all toolbar button does not "
+            f"fire reliably through Playwright. Wait for the fold to finish, download the "
+            f"produced model, then call record_fold_result with tool='{tool}' and the "
+            f"downloaded path. The loop is resumable; skip jobs already recorded. If "
+            f"build_fold_notebook returns a fail-loud scaffold (the {tool} adapter is not "
+            f"yet wired) or the Colab run errors, report the job as not-run and never "
+            f"fabricate a model or a score. ALWAYS, once every job for your group is folded "
+            f"and recorded (or on a fatal error), release the GPU: open the Runtime menu and "
+            f"choose 'Disconnect and delete runtime' so no runtime is left running."),
         tools=list(_EXEC_TOOLS),
         model="sonnet",
     )

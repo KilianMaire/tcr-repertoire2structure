@@ -40,6 +40,18 @@ def test_every_executor_exact_tools_and_model():
                                  "mcp__playwright__*"}
 
 
+def test_every_executor_releases_the_runtime_and_runs_by_keyboard():
+    # Each executor must tear down its Colab runtime when done (else every fold leaks a
+    # live GPU), and must run cells by keyboard shortcut (the Run all toolbar button does
+    # not fire reliably through Playwright).
+    agents = build_agents()
+    for name in ("protenix-agent", "af3-agent", "mhcfine-agent",
+                 "tcrdock-agent", "affinetune-agent"):
+        p = agents[name].prompt
+        assert "Disconnect and delete runtime" in p
+        assert "Ctrl+Enter" in p
+
+
 def test_options_wire_new_tool_and_agents(tmp_path):
     opts = build_options(str(tmp_path / "run"))
     assert any("list_structure_tools" in t for t in opts.allowed_tools)

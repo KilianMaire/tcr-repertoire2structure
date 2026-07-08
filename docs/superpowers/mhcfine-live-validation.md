@@ -88,6 +88,12 @@ Trust the target cell's own inline stdout stream (RESULT_OK) or a fresh on-disk 
 (`glob output/*.pdb`), not "any frame contains Error". Also: Monaco auto-closes brackets, so
 bracket-heavy one-liners corrupt on `keyboard.type` AND on paste; deliver such payloads as
 base64 and `exec(base64.b64decode('...').decode())` (pure alphanumeric, nothing to corrupt).
+Third: RUN CELLS BY KEYBOARD, not the toolbar. The Run all button (and Runtime > Run all)
+do not reliably fire through Playwright (clicked, cells stayed `[ ]`). Focus a cell and press
+Ctrl+Enter (run focused) or Shift+Enter (run and advance) to queue the whole notebook.
+Fourth: RELEASE THE RUNTIME when done. The executor agents are instructed to open Runtime >
+'Disconnect and delete runtime' after the last job is recorded, so a finished fold never
+leaves a GPU runtime running.
 
 Colab driving note (Playwright): code-cell output renders in a cross-origin
 googleusercontent iframe, so read it via `page.frames()`+`frame.evaluate(innerText)`, not
