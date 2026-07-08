@@ -4,9 +4,9 @@
 
 **Goal:** A Claude orchestrated pipeline that turns a raw 10x TCR repertoire CSV into QC'd predicted TCR pMHC structures for its top clonotypes, with honest specificity annotation and a skeptical hallucination flag.
 
-**Architecture:** A chain of stages (ingest, annotate, foldprep, fold, qc, report). Each stage is a pure Python module with a typed output persisted to a run directory, so the chain is resumable. Heavy lifting reuses TCR Explorer (imported as `tcr_explorer`) for allele assignment and TCRdist annotation, the existing Protenix Colab fold procedure driven by a Claude agent for structure prediction, and geometry scoring for QC. Claude orchestrates the chain, drives the browser for GPU folding, and makes the QC judgment.
+**Architecture:** Two layers. A deterministic stage layer (ingest, annotate, foldprep, fold, qc, report), each a pure Python module with a typed output persisted to a run directory, so the chain is resumable and fully testable offline. On top, a genuine multi agent layer built on the Claude Agent SDK: the stage functions are exposed as in process tools, and an orchestrator agent delegates to specialist agents (a fold agent that drives Playwright, a skeptical QC agent, a report agent) that coordinate through the shared run directory. The stage layer carries reliability; the agent layer is the product and the Built with Claude story. Heavy lifting reuses TCR Explorer (imported as `tcr_explorer`) for allele assignment and TCRdist annotation, the existing Protenix Colab fold procedure for structure prediction, and geometry scoring for QC.
 
-**Tech Stack:** Python 3.11, pandas, polars, numpy, biopython, jinja2 (HTML report), pytest. Dependency on the local `tcr_explorer` package (from `~/imgt-api`). Protenix folding on Google Colab driven via Playwright.
+**Tech Stack:** Python 3.11, pandas, polars, numpy, biopython, jinja2 (HTML report), pytest, claude-agent-sdk (multi agent runtime). Dependency on the local `tcr_explorer` package (from `~/imgt-api`). Protenix folding on Google Colab driven via the Playwright MCP.
 
 ## Global Constraints
 
@@ -35,7 +35,10 @@ tcr-repertoire2structure/
     fold.py                          # stage 3: resumable fold runner (pluggable fold_fn)
     qc.py                            # stage 4: geometry scoring, scramble calibrated verdict
     report.py                        # stage 5: HTML report (jinja2)
-    pipeline.py                      # orchestration CLI
+    pipeline.py                      # deterministic reference chain + offline test harness
+    agent_tools.py                   # stage functions wrapped as Agent SDK tools (in process MCP)
+    agents.py                        # AgentDefinition for orchestrator + fold + qc + report agents
+    app.py                           # product entrypoint: query() run over the agent layer
   tests/
     fixtures/
       tenx_tiny.csv                  # synthetic 10x paired contig rows
@@ -51,9 +54,11 @@ tcr-repertoire2structure/
     test_qc.py
     test_report.py
     test_pipeline_offline.py
+    test_agent_tools.py
+    test_agents_config.py
 ```
 
-Each module owns one stage. `schema.py` and `runstate.py` are shared infrastructure. `pipeline.py` wires the stages and is the only place that knows the stage order.
+Each stage module owns one stage. `schema.py` and `runstate.py` are shared infrastructure. `pipeline.py` wires the stages deterministically and is the offline test harness (it proves the chain works with a mocked fold). The product entrypoint is the agent layer: `agent_tools.py` exposes the stages as tools, `agents.py` defines the specialist agents, and `app.py` runs the orchestrator.
 
 ---
 
@@ -82,7 +87,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
   "pandas>=2.0", "polars>=1.0", "numpy>=1.24",
-  "biopython>=1.83", "jinja2>=3.1",
+  "biopython>=1.83", "jinja2>=3.1", "claude-agent-sdk>=0.1",
 ]
 
 [project.optional-dependencies]
@@ -1007,7 +1012,12 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 10: Pipeline orchestration and offline end to end
+## Task 10: Deterministic reference chain and offline harness
+
+This is not the product entrypoint. It is the deterministic reference that proves the
+whole stage chain works offline with a mocked fold, and it is what the offline test
+suite exercises end to end. The product is the multi agent layer in Tasks 11 and 12,
+which calls the same stage functions through tools.
 
 **Files:**
 - Create: `src/rep2struct/pipeline.py`
@@ -1118,6 +1128,361 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
+## Task 11: Stage functions as Agent SDK tools
+
+**Files:**
+- Create: `src/rep2struct/agent_tools.py`
+- Test: `tests/test_agent_tools.py`
+
+**Interfaces:**
+- Consumes: the stage functions from Tasks 2 to 9, plus `RunState`. Tools operate on a
+  `run_dir` and persist to the run directory so data survives across tool calls and
+  across agents (Agent SDK subagents start with fresh context, so shared state lives on
+  disk, never in the prompt).
+- Produces: async `@tool` functions and a `create_sdk_mcp_server(name="rep2struct", ...)`
+  server named `rep2struct`. A `configure(sim_fn=None, assign_fn=None)` hook lets tests
+  inject offline fakes. Each tool returns `{"content": [...text summary...],
+  "structuredContent": {...}}`.
+- Tools: `ingest_repertoire(run_dir, csv_path)`, `annotate_specificity(run_dir)`,
+  `prep_and_select(run_dir, top_n)`, `list_fold_jobs(run_dir)`,
+  `record_fold_result(run_dir, clonotype_id, model_paths)`,
+  `qc_structure(run_dir, clonotype_id, scramble_threshold)`, `render_final_report(run_dir)`.
+  The fold agent drives Playwright itself and reports models through
+  `record_fold_result`, so browser driving stays in the agent and state stays in tools.
+
+- [ ] **Step 1: Write the failing test (call tools directly, offline)**
+
+```python
+# tests/test_agent_tools.py
+import asyncio
+from pathlib import Path
+from rep2struct import agent_tools as at
+
+FIX = Path(__file__).parent / "fixtures"
+
+def _run(coro): return asyncio.get_event_loop().run_until_complete(coro)
+
+def test_ingest_then_annotate_tools(tmp_path):
+    def sim(cdr3_a, v_a, cdr3_b, v_b, species="human", top_k=5):
+        if cdr3_b == "CASSIRSSYEQYF":
+            return ([{"epitope": "GILGFVFTL", "mhc": "HLA-A*02:01",
+                      "antigen": "Flu M1", "distance": 3.0}], "tcrdist", 1, [])
+        return ([], "tcrdist", 0, [])
+    at.configure(sim_fn=sim, assign_fn=lambda g, species="human", chain=None: g + "*01")
+    rd = str(tmp_path / "run")
+    ing = _run(at.ingest_repertoire({"run_dir": rd, "csv_path": str(FIX / "tenx_tiny.csv")}))
+    assert ing["structuredContent"]["clonotypes"] >= 1
+    ann = _run(at.annotate_specificity({"run_dir": rd}))
+    tiers = ann["structuredContent"]["tiers"]
+    assert tiers.get("high", 0) >= 1
+
+def test_qc_tool_flags_scramble(tmp_path):
+    rd = str(tmp_path / "run2")
+    at.configure()
+    # seed a fold job + model path pointing at the scramble fixture
+    _run(at.ingest_repertoire({"run_dir": rd, "csv_path": str(FIX / "tenx_tiny.csv")}))
+    _run(at.record_fold_result({"run_dir": rd, "clonotype_id": "z",
+                                "model_paths": [str(FIX / "scramble_min.cif")]}))
+    out = _run(at.qc_structure({"run_dir": rd, "clonotype_id": "z", "scramble_threshold": 1.0}))
+    assert out["structuredContent"]["qc_verdict"] == "suspect"
+```
+
+- [ ] **Step 2: Run to verify fail**
+
+Run: `pytest tests/test_agent_tools.py -v`
+Expected: FAIL (module missing).
+
+- [ ] **Step 3: Implement agent_tools.py**
+
+```python
+# src/rep2struct/agent_tools.py
+from __future__ import annotations
+from claude_agent_sdk import tool, create_sdk_mcp_server
+from .runstate import RunState
+from .ingest import parse_10x, standardize_alleles
+from .annotate import annotate
+from .foldprep import select_top, build_construct
+from .qc import score_model, verdict
+from .report import render_report
+from .schema import Clonotype, Annotation, QCResult
+
+_CFG = {"sim_fn": None, "assign_fn": None}
+def configure(sim_fn=None, assign_fn=None):
+    _CFG["sim_fn"] = sim_fn
+    _CFG["assign_fn"] = assign_fn
+
+def _txt(s): return {"content": [{"type": "text", "text": s}]}
+def _load(rd, name, cls):
+    rs = RunState(rd)
+    return [cls(**d) for d in rs.read_stage(name)] if rs.stage_done(name) else []
+
+@tool("ingest_repertoire", "Parse a 10x contig CSV into paired clonotypes and persist them.",
+      {"run_dir": str, "csv_path": str})
+async def ingest_repertoire(args):
+    clons = standardize_alleles(parse_10x(args["csv_path"]), assign_fn=_CFG["assign_fn"])
+    RunState(args["run_dir"]).write_stage("ingest", clons)
+    r = _txt(f"{len(clons)} clonotypes ingested")
+    r["structuredContent"] = {"clonotypes": len(clons)}
+    return r
+
+@tool("annotate_specificity", "Annotate persisted clonotypes with candidate epitopes by TCRdist. Never forces a label.",
+      {"run_dir": str})
+async def annotate_specificity(args):
+    clons = _load(args["run_dir"], "ingest", Clonotype)
+    anns = annotate(clons, sim_fn=_CFG["sim_fn"])
+    RunState(args["run_dir"]).write_stage("annotate", anns)
+    tiers = {}
+    for a in anns:
+        tiers[a.confidence_tier] = tiers.get(a.confidence_tier, 0) + 1
+    r = _txt(f"annotated {len(anns)} clonotypes: {tiers}")
+    r["structuredContent"] = {"tiers": tiers}
+    return r
+
+@tool("prep_and_select", "Rank clonotypes and build class I fold constructs for the top N.",
+      {"run_dir": str, "top_n": int})
+async def prep_and_select(args):
+    clons = _load(args["run_dir"], "ingest", Clonotype)
+    anns = _load(args["run_dir"], "annotate", Annotation)
+    top = select_top(clons, anns, n=args["top_n"])
+    seqs = {c.id: {"A": "G"*10 + c.cdr3a, "B": "G"*10 + c.cdr3b} for c, _ in top}
+    mhc = {a.hla: {"heavy": "H"*20, "b2m": "M"*20} for _, a in top if a.hla}
+    jobs = [build_construct(c, a, seqs, mhc) for c, a in top]
+    RunState(args["run_dir"]).write_stage("foldjobs", jobs)
+    r = _txt(f"prepared {len(jobs)} fold jobs")
+    r["structuredContent"] = {"jobs": [j.clonotype_id for j in jobs]}
+    return r
+
+@tool("list_fold_jobs", "List fold jobs and their construct FASTA for the fold agent.",
+      {"run_dir": str})
+async def list_fold_jobs(args):
+    rs = RunState(args["run_dir"])
+    jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
+    r = _txt(f"{len(jobs)} jobs")
+    r["structuredContent"] = {"jobs": jobs}
+    return r
+
+@tool("record_fold_result", "Record the model paths a fold produced for one clonotype.",
+      {"run_dir": str, "clonotype_id": str, "model_paths": list})
+async def record_fold_result(args):
+    rs = RunState(args["run_dir"])
+    done = rs.read_stage("folds") if rs.stage_done("folds") else {}
+    done[args["clonotype_id"]] = args["model_paths"]
+    rs.write_stage("folds", done)
+    return _txt(f"recorded {len(args['model_paths'])} models for {args['clonotype_id']}")
+
+@tool("qc_structure", "Score a predicted structure and return a skeptical reliable or suspect verdict.",
+      {"run_dir": str, "clonotype_id": str, "scramble_threshold": float})
+async def qc_structure(args):
+    rs = RunState(args["run_dir"])
+    done = rs.read_stage("folds") if rs.stage_done("folds") else {}
+    paths = done.get(args["clonotype_id"], [])
+    if not paths:
+        res = QCResult(args["clonotype_id"], "qc_failed", "no model recorded")
+    else:
+        s = score_model(paths[0]); s["clonotype_id"] = args["clonotype_id"]
+        res = verdict(s, args["scramble_threshold"])
+    qcs = rs.read_stage("qc") if rs.stage_done("qc") else []
+    qcs = [q for q in qcs if q["clonotype_id"] != res.clonotype_id]
+    from dataclasses import asdict
+    qcs.append(asdict(res)); rs.write_stage("qc", qcs)
+    r = _txt(f"{res.clonotype_id}: {res.qc_verdict} ({res.reason})")
+    r["structuredContent"] = {"qc_verdict": res.qc_verdict, "reason": res.reason}
+    return r
+
+@tool("render_final_report", "Render the self contained HTML report for the run.",
+      {"run_dir": str})
+async def render_final_report(args):
+    clons = _load(args["run_dir"], "ingest", Clonotype)
+    anns = _load(args["run_dir"], "annotate", Annotation)
+    rs = RunState(args["run_dir"])
+    qcs = [QCResult(**d) for d in (rs.read_stage("qc") if rs.stage_done("qc") else [])]
+    html = render_report(clons, anns, qcs)
+    from pathlib import Path
+    out = Path(args["run_dir"]) / "report.html"; out.write_text(html)
+    r = _txt(f"report written to {out}")
+    r["structuredContent"] = {"report_path": str(out)}
+    return r
+
+def build_server():
+    return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
+        ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
+        record_fold_result, qc_structure, render_final_report,
+    ])
+```
+
+- [ ] **Step 4: Run tests to verify pass**
+
+Run: `pytest tests/test_agent_tools.py -v`
+Expected: PASS (2 tests). Note: the `@tool` decorated callables are invoked directly with an args dict, which the SDK supports.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/rep2struct/agent_tools.py tests/test_agent_tools.py
+git commit -m "feat: expose stages as Agent SDK tools over a shared run directory
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+## Task 12: Multi agent layer and product entrypoint
+
+**Files:**
+- Create: `src/rep2struct/agents.py`
+- Create: `src/rep2struct/app.py`
+- Test: `tests/test_agents_config.py`
+
+**Interfaces:**
+- Produces: `build_agents() -> dict[str, AgentDefinition]` (fold, qc, report specialists);
+  `build_options(run_dir) -> ClaudeAgentOptions` wiring the in process `rep2struct` tool
+  server, the Playwright MCP, the specialist agents, and the allowed tools;
+  `orchestrator_prompt(csv_path, run_dir, top_n) -> str`; and async `run(csv_path,
+  run_dir, top_n) -> str` that calls `query()` and returns the report path.
+- The config assembly (agents, tool wiring) is unit tested offline. The live `query()`
+  run needs the API and is a manual demo step, not a unit test.
+
+- [ ] **Step 1: Write the failing config test**
+
+```python
+# tests/test_agents_config.py
+from rep2struct.agents import build_agents, build_options, orchestrator_prompt
+
+def test_specialist_agents_present():
+    agents = build_agents()
+    assert set(agents) >= {"fold-agent", "qc-agent", "report-agent"}
+    # the fold agent must be allowed to drive the browser
+    assert any("playwright" in t for t in agents["fold-agent"].tools)
+
+def test_options_wire_tools_and_agents(tmp_path):
+    opts = build_options(str(tmp_path / "run"))
+    assert "rep2struct" in opts.mcp_servers
+    assert "playwright" in opts.mcp_servers
+    assert any(t.startswith("mcp__rep2struct__") or t == "Agent" for t in opts.allowed_tools)
+    assert set(opts.agents) >= {"fold-agent", "qc-agent", "report-agent"}
+
+def test_prompt_names_the_stages(tmp_path):
+    p = orchestrator_prompt("x.csv", str(tmp_path), 8)
+    for kw in ["ingest", "annotate", "fold", "qc", "report"]:
+        assert kw in p.lower()
+```
+
+- [ ] **Step 2: Run to verify fail**
+
+Run: `pytest tests/test_agents_config.py -v`
+Expected: FAIL (module missing).
+
+- [ ] **Step 3: Implement agents.py**
+
+```python
+# src/rep2struct/agents.py
+from __future__ import annotations
+from claude_agent_sdk import ClaudeAgentOptions, AgentDefinition
+from .agent_tools import build_server
+
+def build_agents():
+    return {
+        "fold-agent": AgentDefinition(
+            description="Folds TCR pMHC constructs by driving Protenix on Colab through the browser.",
+            prompt=(
+                "You fold structures. Call list_fold_jobs to get constructs. For each job, "
+                "drive the Protenix Colab notebook with the mcp__playwright tools: open the "
+                "notebook, submit the construct FASTA at 5 seeds, wait for completion, download "
+                "the CIF models, then call record_fold_result with the local model paths. The "
+                "loop is resumable; skip a job that already has recorded models."),
+            tools=["mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__record_fold_result",
+                   "mcp__playwright__*"],
+            model="sonnet",
+        ),
+        "qc-agent": AgentDefinition(
+            description="Skeptical QC of predicted TCR pMHC structures. Flags geometry hallucinations.",
+            prompt=(
+                "You are a skeptical structural referee. For each folded clonotype call "
+                "qc_structure. A clean fold does NOT confirm specificity: Protenix imposes "
+                "canonical docking geometry even on non binders. Report reliable only when the "
+                "CDR3 to peptide contact beats the scramble calibration; otherwise suspect. Never "
+                "upgrade a verdict to please the caller."),
+            tools=["mcp__rep2struct__qc_structure"],
+            model="opus",
+        ),
+        "report-agent": AgentDefinition(
+            description="Renders the final HTML report tying clonotype to specificity to structure to QC.",
+            prompt="Call render_final_report and return the report path. Add no unsupported claims.",
+            tools=["mcp__rep2struct__render_final_report"],
+            model="sonnet",
+        ),
+    }
+
+def build_options(run_dir):
+    return ClaudeAgentOptions(
+        mcp_servers={
+            "rep2struct": build_server(),
+            "playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]},
+        },
+        agents=build_agents(),
+        allowed_tools=[
+            "Agent",
+            "mcp__rep2struct__ingest_repertoire", "mcp__rep2struct__annotate_specificity",
+            "mcp__rep2struct__prep_and_select", "mcp__rep2struct__list_fold_jobs",
+            "mcp__rep2struct__record_fold_result", "mcp__rep2struct__qc_structure",
+            "mcp__rep2struct__render_final_report", "mcp__playwright__*",
+        ],
+        permission_mode="acceptEdits",
+    )
+
+def orchestrator_prompt(csv_path, run_dir, top_n):
+    return (
+        f"Run the repertoire to structure pipeline on {csv_path} with run_dir {run_dir}.\n"
+        f"1. Call ingest_repertoire, then annotate_specificity (honest annotation, keep unannotatable as is).\n"
+        f"2. Call prep_and_select with top_n {top_n}.\n"
+        f"3. Delegate to the fold-agent to fold the prepared jobs.\n"
+        f"4. Delegate to the qc-agent to QC each folded clonotype (scramble_threshold from calibration).\n"
+        f"5. Delegate to the report-agent to render the final HTML report, and return its path.")
+```
+
+- [ ] **Step 4: Implement app.py**
+
+```python
+# src/rep2struct/app.py
+from __future__ import annotations
+import asyncio
+from claude_agent_sdk import query, ResultMessage
+from .agents import build_options, orchestrator_prompt
+
+async def run(csv_path, run_dir, top_n=8):
+    opts = build_options(run_dir)
+    result = None
+    async for message in query(prompt=orchestrator_prompt(csv_path, run_dir, top_n), options=opts):
+        if isinstance(message, ResultMessage) and getattr(message, "subtype", None) == "success":
+            result = message.result
+    return result
+
+def main():
+    import sys
+    csv_path, run_dir = sys.argv[1], sys.argv[2]
+    top_n = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    print(asyncio.run(run(csv_path, run_dir, top_n)))
+
+if __name__ == "__main__":
+    main()
+```
+
+- [ ] **Step 5: Run tests to verify pass**
+
+Run: `pytest tests/test_agents_config.py -v`
+Expected: PASS (3 tests). Then the full suite: `pytest -v`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/rep2struct/agents.py src/rep2struct/app.py tests/test_agents_config.py
+git commit -m "feat: multi agent layer (orchestrator plus fold, qc, report specialists)
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
 ## After the core: live integration (not unit tested, run manually)
 
 These steps connect the real datasets and the real fold. They are checklist items for the demo, run by the Claude agent, not covered by the offline suite.
@@ -1125,15 +1490,18 @@ These steps connect the real datasets and the real fold. They are checklist item
 - [ ] Install `~/imgt-api` editable into the venv, confirm `from tcr_explorer.similarity import find_similar_paired_tcrs` imports, and confirm `tcr_explorer.tcrdist_engine.tcrdist_available()` is true.
 - [ ] Wire the real `sim_fn` and `assign_fn` (drop the injected fakes) and reconstruct real V domain sequences for the construct from TCR Explorer instead of `_tcr_seq_stub`.
 - [ ] Download the 10x 4 donor dextramer set, build the `labels` map from binarized dextramer calls, run the validation arm, and record precision, recall, and unannotatable rate. Calibrate `DEFAULT_TIERS` and `scramble_threshold` from this arm.
-- [ ] Run the application arm on one TABLO donor CSV end to end with the real `fold_fn` (Claude drives Protenix on Colab via Playwright) for the top N clonotypes.
+- [ ] Run the application arm on one TABLO donor CSV end to end through the agent app (`python -m rep2struct.app <csv> <run_dir> <top_n>`), where the fold agent drives Protenix on Colab via the Playwright MCP for the top N clonotypes.
+- [ ] Confirm the Playwright MCP is installed (`npx @playwright/mcp@latest`) and that the fold agent can reach the Colab notebook.
 - [ ] Publish the two HTML reports as claude.ai Artifacts for the demo.
 
 ---
 
 ## Self-Review
 
-Spec coverage: stages 0 to 5 each map to Tasks 2 to 9; orchestration is Task 10; the two honesty rules are enforced in `annotate.py` (annotatable flag, unannotatable tier) and `qc.py` (suspect verdict). Validation arm is Task 5 plus the live checklist. Application arm is the live checklist. Report format is HTML (Task 9).
+Spec coverage: stages 0 to 5 each map to Tasks 2 to 9; the deterministic reference chain is Task 10; the multi agent product layer is Tasks 11 (tools) and 12 (agents plus entrypoint). The two honesty rules are enforced in `annotate.py` (annotatable flag, unannotatable tier) and `qc.py` (suspect verdict), and are restated in the qc-agent prompt. Validation arm is Task 5 plus the live checklist. Application arm runs through `app.py` in the live checklist. Report format is HTML (Task 9).
 
 Placeholder scan: the only ellipsis is `test_resume_is_idempotent` in Task 10 Step 1, intentionally left for the implementer to mirror the preceding test; every implementation step carries complete code.
 
-Type consistency: `Clonotype`, `Annotation`, `FoldJob`, `QCResult` field names are used identically across ingest, annotate, foldprep, fold, qc, report, and pipeline. `sim_fn` returns the four tuple `(neighbours, engine, total, warnings)` matching TCR Explorer everywhere it is called.
+Type consistency: `Clonotype`, `Annotation`, `FoldJob`, `QCResult` field names are used identically across ingest, annotate, foldprep, fold, qc, report, pipeline, and agent_tools. `sim_fn` returns the four tuple `(neighbours, engine, total, warnings)` matching TCR Explorer everywhere it is called. The tool server name `rep2struct` matches the `mcp__rep2struct__` prefixes in `agents.py` allowed tools. Agent keys `fold-agent`, `qc-agent`, `report-agent` match between `build_agents` and the config test.
+
+Agent SDK API check: `tool`, `create_sdk_mcp_server`, `AgentDefinition`, `ClaudeAgentOptions`, `query`, `ResultMessage` are the current import surface of `claude-agent-sdk`. Tool return shape is `{"content": [...], "structuredContent": {...}}`. Subagents receive no parent context, which is why all shared state is persisted to the run directory by the tools rather than passed in prompts. Model aliases (`sonnet`, `opus`) are used rather than dated model IDs.
