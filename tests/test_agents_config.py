@@ -14,6 +14,7 @@ def test_options_wire_tools_and_agents(tmp_path):
     assert "playwright" in opts.mcp_servers
     assert any(t.startswith("mcp__rep2struct__") or t == "Agent" for t in opts.allowed_tools)
     assert set(opts.agents) >= {"fold-agent", "qc-agent", "report-agent"}
+    assert opts.permission_mode == "bypassPermissions"
 
 
 def test_prompt_names_the_stages(tmp_path):

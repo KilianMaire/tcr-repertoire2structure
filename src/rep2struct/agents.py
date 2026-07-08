@@ -51,7 +51,8 @@ def build_options(run_dir):
             "mcp__rep2struct__record_fold_result", "mcp__rep2struct__qc_structure",
             "mcp__rep2struct__render_final_report", "mcp__playwright__*",
         ],
-        permission_mode="acceptEdits",
+        # Autonomous multi-agent demo run; no interactive approval needed during live orchestration.
+        permission_mode="bypassPermissions",
     )
 
 
