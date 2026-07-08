@@ -16,25 +16,8 @@ import json
 import sys
 from pathlib import Path
 
-
-def parse_fasta(text):
-    chains, cur = {}, None
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith(">"):
-            cur = line[1:].strip()
-            chains[cur] = ""
-        elif cur:
-            chains[cur] += line
-    return chains
-
-
-def scramble_peptide(pep):
-    # deterministic non-identity shuffle: reverse then rotate by 1. Preserves
-    # composition, changes the register, no RNG (reproducible).
-    s = pep[::-1]
-    s = s[1:] + s[:1]
-    return s if s != pep else pep[1:] + pep[:1]
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from rep2struct.tools.construct_io import parse_fasta, scramble_peptide
 
 
 def to_protenix(name, chains):
