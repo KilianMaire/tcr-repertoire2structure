@@ -33,3 +33,24 @@ def parse_10x(path, report: bool = False):
     if report:
         return clons, {"dropped_unpaired": dropped_unpaired, "clonotypes": len(clons)}
     return clons
+
+def _default_assign(gene, species="human", chain=None):
+    from tcr_explorer.tcr_align import assign
+    res = assign(gene, species=species, chain=chain)
+    v = getattr(res, "v_allele", None)
+    return v
+
+def standardize_alleles(clonotypes, assign_fn=None):
+    fn = assign_fn or _default_assign
+    out = []
+    for c in clonotypes:
+        try:
+            c.trav_allele = fn(c.trav, species="human", chain="A")
+        except Exception:
+            c.trav_allele = None
+        try:
+            c.trbv_allele = fn(c.trbv, species="human", chain="B")
+        except Exception:
+            c.trbv_allele = None
+        out.append(c)
+    return out

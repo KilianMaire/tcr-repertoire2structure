@@ -1,5 +1,6 @@
 from pathlib import Path
-from rep2struct.ingest import parse_10x
+from rep2struct.ingest import parse_10x, standardize_alleles
+from rep2struct.schema import Clonotype
 
 FIX = Path(__file__).parent / "fixtures" / "tenx_tiny.csv"
 
@@ -25,3 +26,12 @@ def test_productive_filter_drops_paired_cell():
     assert "CAVINNDYKLSF" not in alphas
     # dropped_unpaired should still be 2 (only AAAF and AAAG), not counting AAAH
     assert report["dropped_unpaired"] == 2
+
+def test_standardize_alleles_fills_allele_or_keeps_none():
+    clons = [Clonotype(id="x", trav="TRAV1-2", cdr3a="CAVMDSSYKLIF",
+                       trbv="TRBV19", cdr3b="CASSIRSSYEQYF", size=2)]
+    def fake_assign(gene, species, chain):
+        return {"TRAV1-2": "TRAV1-2*01", "TRBV19": None}.get(gene)
+    out = standardize_alleles(clons, assign_fn=fake_assign)
+    assert out[0].trav_allele == "TRAV1-2*01"
+    assert out[0].trbv_allele is None  # failure keeps None, clonotype kept
