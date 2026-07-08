@@ -1,30 +1,57 @@
 from __future__ import annotations
 from claude_agent_sdk import ClaudeAgentOptions, AgentDefinition
 from .agent_tools import build_server
+from . import structure_tools
+
+_EXEC_TOOLS = ["mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__record_fold_result",
+               "mcp__playwright__*"]
+
+
+def _executor(name, tool):
+    return AgentDefinition(
+        description=f"{name}: folds the {tool} group by driving its Colab notebook through the browser.",
+        prompt=(
+            f"You run the {tool} structure tool for the jobs assigned to your group. "
+            f"Call list_fold_jobs, and for each job whose tool is '{tool}', drive the "
+            f"{tool} Colab notebook with the mcp__playwright tools: open it, submit the "
+            f"construct (MSA already embedded, run MSA-free at runtime), wait, download "
+            f"the model or score, then call record_fold_result with tool='{tool}'. The "
+            f"loop is resumable; skip jobs already recorded. If the {tool} Colab adapter "
+            f"is not available in this environment, report the job as not-run. Never "
+            f"fabricate a model or a score."),
+        tools=list(_EXEC_TOOLS),
+        model="sonnet",
+    )
 
 
 def build_agents():
-    return {
-        "fold-agent": AgentDefinition(
-            description="Folds TCR pMHC constructs by driving Protenix on Colab through the browser.",
+    agents = {
+        "structure-strategist": AgentDefinition(
+            description="Reasons over the tool registry and construct tags; routes each group to a tool.",
             prompt=(
-                "You fold structures. Call list_fold_jobs to get constructs. For each job, "
-                "drive the Protenix Colab notebook with the mcp__playwright tools: open the "
-                "notebook, submit the construct FASTA at 5 seeds, wait for completion, download "
-                "the CIF models, then call record_fold_result with the local model paths. The "
-                "loop is resumable; skip a job that already has recorded models."),
-            tools=["mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__record_fold_result",
-                   "mcp__playwright__*"],
-            model="sonnet",
+                "You choose structure tools. Call list_structure_tools to read each tool's "
+                "validity domain, and list_fold_jobs to see the jobs (each carries group_id, "
+                "mhc_class, has_tcr, species, output_needed). For each homogeneous group pick "
+                "ONE tool: Protenix is the default workhorse; switch to a specialized tool "
+                "only when the group justifies it (af3 if the user has weights and it helps, "
+                "affinetune for is-it-presented in class I or II, mhcfine for a precise class I "
+                "pose, tcrdock for the TCR interface). Never Boltz. If no tool's validity "
+                "domain covers a group, fall back to Protenix and state plainly that an "
+                "un-wired tool would fit better. Justify each choice in one sentence, then "
+                "delegate the group to that tool's executor agent (protenix-agent, af3-agent, "
+                "mhcfine-agent, tcrdock-agent, affinetune-agent)."),
+            tools=["mcp__rep2struct__list_structure_tools", "mcp__rep2struct__list_fold_jobs", "Agent"],
+            model="opus",
         ),
         "qc-agent": AgentDefinition(
-            description="Skeptical QC of predicted TCR pMHC structures. Flags geometry hallucinations.",
+            description="Skeptical QC per group; calibration is per tool, output-type aware.",
             prompt=(
                 "You are a skeptical structural referee. For each folded clonotype call "
-                "qc_structure. A clean fold does NOT confirm specificity: Protenix imposes "
-                "canonical docking geometry even on non binders. Report reliable only when the "
-                "CDR3 to peptide contact beats the scramble calibration; otherwise suspect. Never "
-                "upgrade a verdict to please the caller."),
+                "qc_structure with that group's OWN scramble_threshold (never a global one) "
+                "and its output_type and tool. A clean fold does NOT confirm specificity. For "
+                "binding_score tools you judge predicted presentation, not geometry. Report "
+                "reliable only when the CDR3 to peptide contact beats the group's scramble "
+                "calibration; otherwise suspect. Never upgrade a verdict to please the caller."),
             tools=["mcp__rep2struct__qc_structure"],
             model="opus",
         ),
@@ -35,6 +62,9 @@ def build_agents():
             model="sonnet",
         ),
     }
+    for t in structure_tools.REGISTRY:
+        agents[f"{t.name}-agent"] = _executor(f"{t.name}-agent", t.name)
+    return agents
 
 
 def build_options(run_dir):
@@ -47,20 +77,23 @@ def build_options(run_dir):
         allowed_tools=[
             "Agent",
             "mcp__rep2struct__ingest_repertoire", "mcp__rep2struct__annotate_specificity",
-            "mcp__rep2struct__prep_and_select", "mcp__rep2struct__list_fold_jobs",
-            "mcp__rep2struct__record_fold_result", "mcp__rep2struct__qc_structure",
-            "mcp__rep2struct__render_final_report", "mcp__playwright__*",
+            "mcp__rep2struct__prep_and_select", "mcp__rep2struct__list_structure_tools",
+            "mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__record_fold_result",
+            "mcp__rep2struct__qc_structure", "mcp__rep2struct__render_final_report",
+            "mcp__playwright__*",
         ],
         # Autonomous multi-agent demo run; no interactive approval needed during live orchestration.
         permission_mode="bypassPermissions",
     )
 
 
-def orchestrator_prompt(csv_path, run_dir, top_n):
+def orchestrator_prompt(csv_path, run_dir, top_n, question=None):
+    steer = (f"\nUser question steering the routing: {question}\n" if question else
+             "\nNo user question: route each group from its construct tags.\n")
     return (
-        f"Run the repertoire to structure pipeline on {csv_path} with run_dir {run_dir}.\n"
+        f"Run the repertoire to structure pipeline on {csv_path} with run_dir {run_dir}.{steer}"
         f"1. Call ingest_repertoire, then annotate_specificity (honest annotation, keep unannotatable as is).\n"
         f"2. Call prep_and_select with top_n {top_n}.\n"
-        f"3. Delegate to the fold-agent to fold the prepared jobs.\n"
-        f"4. Delegate to the qc-agent to QC each folded clonotype (scramble_threshold from calibration).\n"
+        f"3. Delegate to the structure-strategist to route each group to a tool and drive its executor to fold.\n"
+        f"4. Delegate to the qc-agent to QC each folded clonotype with that group's calibration.\n"
         f"5. Delegate to the report-agent to render the final HTML report, and return its path.")
