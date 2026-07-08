@@ -151,3 +151,16 @@ Rewritten to be honest:
 peptide_groove is distinct from Protenix/tcrdock QC and never shared. If a real specificity
 discriminator is wanted later, the candidate is a per-pair cognate-vs-scramble
 masked_plddt DELTA (not an absolute threshold), validated on more pairs.
+
+## Step 4: notebook adapter WIRED (DONE, branch feat/wire-mhcfine-notebook)
+
+`tools/notebook.build_notebook("mhcfine", inputs)` now returns the real validated recipe
+(no longer a NotImplementedError stub): clone, deps+kalign BEFORE import (numpy<2, no
+restart), weights + chmod msa_run, then a fold loop over INPUTS
+({key: {protein_sequence, peptide_sequence}}, e.g. cognate + scramble) writing
+./output/{key}.pdb. Other tools (tcrdock/affinetune/af3) keep the fail-loud stub. Suite
+102/102. STILL PENDING (executor plumbing, not the adapter): expose build_notebook to the
+mhcfine executor (an MCP tool writing the .ipynb to the run dir, or prep stamping it per
+job) plus the Playwright upload/run/download drive; and per-clonotype output keys (the
+adapter uses the caller's INPUTS keys, so a single VM reused across clonotypes would need
+clonotype-prefixed keys to avoid output/{key}.pdb collisions).
