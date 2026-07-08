@@ -3,6 +3,7 @@ from pathlib import Path
 from rep2struct import agent_tools as at
 
 FIX = Path(__file__).parent / "fixtures"
+_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run(coro):
@@ -131,6 +132,42 @@ def test_list_structure_tools_returns_registry():
     res = _run(at.list_structure_tools.handler({"run_dir": "/tmp/whatever"}))
     names = {t["name"] for t in res["structuredContent"]["tools"]}
     assert names == {"protenix", "af3", "mhcfine", "tcrdock", "affinetune"}
+
+
+def test_qc_structure_common_gate_fails_closed_on_missing_chains(tmp_path):
+    # a mhcfine pose recorded but the CIF is a fixture missing chain C/E -> qc_failed
+    rd = str(tmp_path / "run")
+    bad = str(_ROOT / "tests" / "fixtures" / "threechain_min.cif")  # implementer: pick a fixture that lacks the expected mhcfine chains
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "model_paths": [bad], "tool": "mhcfine"}))
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": 1.0,
+         "output_type": "structure", "tool": "mhcfine"}))
+    assert res["structuredContent"]["qc_verdict"] == "qc_failed"
+
+
+def test_qc_structure_dispatches_peptide_groove_for_mhcfine(tmp_path, monkeypatch):
+    import numpy as np
+    from rep2struct import qc
+    from rep2struct.runstate import RunState
+    rd = str(tmp_path / "run")
+    cif = tmp_path / "c1.cif"; cif.write_text("dummy")
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "model_paths": [str(cif)], "tool": "mhcfine"}))
+    # synthetic pMHC: C=MHC heavy, D=b2m, E=peptide near C, all well separated (passes the gate)
+    chains = {
+        "C": np.array([[0, 0, 0], [20, 0, 0]], float),
+        "D": np.array([[50, 0, 0]], float),
+        "E": np.array([[1, 0, 0], [2, 0, 0]], float),
+    }
+    monkeypatch.setattr(qc, "load_chains", lambda p: chains)
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": 0.5,
+         "output_type": "structure", "tool": "mhcfine"}))
+    # the peptide_groove dispatch yields a pose verdict; the old cdr3_peptide path never did
+    assert res["structuredContent"]["qc_verdict"] in ("pose_reliable", "pose_suspect")
+    stored = RunState(rd).read_stage("qc")
+    assert stored[0]["tool"] == "mhcfine" and stored[0]["calibration_basis"] == "groove_scramble_null"
 
 
 def test_prep_and_select_stamps_group_id(tmp_path):

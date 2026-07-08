@@ -118,7 +118,7 @@ async def record_fold_result(args):
       {"run_dir": str, "clonotype_id": str, "scramble_threshold": float,
        "output_type": str, "tool": str})
 async def qc_structure(args):
-    from .qc import verdict_binding
+    from .qc import verdict_binding, load_chains, common_checks, score_pose, verdict_groove
     rs = RunState(args["run_dir"])
     done = rs.read_stage("folds") if rs.stage_done("folds") else {}
     rec = done.get(args["clonotype_id"], {})
@@ -126,18 +126,28 @@ async def qc_structure(args):
         rec = {"paths": rec, "tool": "protenix"}
     paths = rec.get("paths", [])
     tool = args.get("tool", rec.get("tool", "protenix"))
-    output_type = structure_tools.output_type_for(tool)   # tool decides, not the agent
+    metric = structure_tools.qc_metric_for(tool)   # tool decides, not the agent
     if not paths:
         res = QCResult(args["clonotype_id"], "qc_failed", "no model recorded", tool=tool)
-    elif output_type == "binding_score":
+    elif metric == "binding_score":
         score = float(Path(paths[0]).read_text().strip())
         res = verdict_binding(score, args["scramble_threshold"], args["clonotype_id"], tool=tool)
     else:
-        s = score_model(paths[0])
-        s["clonotype_id"] = args["clonotype_id"]
-        res = verdict(s, args["scramble_threshold"])
-        res.tool = tool
-        res.calibration_basis = "scramble_null"
+        expected = {"A", "B", "C", "D", "E"} if metric == "cdr3_peptide" else {"C", "D", "E"}
+        chains = load_chains(paths[0])
+        cc = common_checks(chains, expected)
+        if not cc["ok"]:
+            res = QCResult(args["clonotype_id"], "qc_failed",
+                           "; ".join(cc["issues"]), tool=tool)
+        elif metric == "peptide_groove":
+            res = verdict_groove(score_pose(chains), args["scramble_threshold"],
+                                 args["clonotype_id"], tool=tool)
+        else:  # cdr3_peptide
+            s = score_model(paths[0])
+            s["clonotype_id"] = args["clonotype_id"]
+            res = verdict(s, args["scramble_threshold"])
+            res.tool = tool
+            res.calibration_basis = "scramble_null"
     qcs = rs.read_stage("qc") if rs.stage_done("qc") else []
     qcs = [q for q in qcs if q["clonotype_id"] != res.clonotype_id]
     qcs.append(asdict(res))
