@@ -188,7 +188,8 @@ def test_build_fold_notebook_writes_wired_mhcfine_ipynb(tmp_path):
     assert "NotImplementedError" not in src          # mhcfine is wired
     assert "SIINFEKL" in src and "CCCCMHC" in src      # MHC heavy + peptide embedded
     assert "c1_cognate" in src and "c1_scramble" in src  # keys prefixed by clonotype id
-    assert "numpy<2" in src and "kalign" in src        # validated recipe carried through
+    assert "np.string_" in src and "kalign" in src     # validated shim recipe carried through
+    assert "numpy<2" not in src                          # stock numpy 2 kept (no ABI-poisoning downgrade)
 
 
 def test_build_fold_notebook_unknown_job_is_reported(tmp_path):

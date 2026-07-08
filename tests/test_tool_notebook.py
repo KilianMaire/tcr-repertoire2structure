@@ -25,17 +25,27 @@ def test_mhcfine_notebook_is_wired_not_a_stub():
     src = "".join(s for cell in nb["cells"] for s in cell["source"])
     assert "NotImplementedError" not in src     # mhcfine is validated, not a stub
     assert "GILGFVFTL" in src and "TFVFGLIGL" in src   # both records embedded
-    for marker in ("numpy<2", "kalign", "msa_run", "from src import", "inference"):
+    for marker in ("np.string_", "np.sum", "kalign", "msa_run", "from src import", "inference"):
         assert marker in src, f"missing recipe marker: {marker}"
 
 
-def test_mhcfine_deps_precede_import_so_no_restart():
-    # The critical ordering learned live: numpy<2 + kalign must be installed BEFORE any
-    # numpy/torch/src import, else np.string_ crashes and the kernel needs a restart.
+def test_mhcfine_keeps_stock_numpy2_no_downgrade():
+    # Learned live 2026-07-09: DOWNGRADING numpy (numpy<2) poisons numpy's own compiled
+    # mtrand.so on today's Colab image (dtype ABI wall). The robust recipe KEEPS stock
+    # numpy 2 and shims the removed AF2-era aliases instead. Lock the lesson: no downgrade.
     nb = build_notebook("mhcfine", {"cognate": {"protein_sequence": "M", "peptide_sequence": "SII"}})
     src = "".join(s for cell in nb["cells"] for s in cell["source"])
-    assert src.index("numpy<2") < src.index("from src import")
-    assert src.index("kalign") < src.index("import torch")
+    assert "numpy<2" not in src and "numpy==1" not in src
+
+
+def test_mhcfine_shim_precedes_import_so_no_restart():
+    # The critical ordering: the numpy-2 compat shim (np.string_, np.sum-on-generator, ...)
+    # and kalign must be in place BEFORE `from src import`, else the AF2-derived code hits
+    # the removed np.string_ / np.sum(generator) and the run dies mid-fold.
+    nb = build_notebook("mhcfine", {"cognate": {"protein_sequence": "M", "peptide_sequence": "SII"}})
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert src.index("np.string_") < src.index("from src import")
+    assert src.index("kalign") < src.index("from src import")
 
 
 def test_inputs_cell_is_executable_python_with_bool_and_none():

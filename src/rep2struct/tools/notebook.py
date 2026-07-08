@@ -25,13 +25,20 @@ def _stub_notebook(tool: str, inputs: dict) -> dict:
 
 
 def _mhcfine_notebook(inputs: dict) -> dict:
-    """Validated MHC-Fine adapter (live 2026-07-08, T4).
+    """Validated MHC-Fine adapter (live re-validated 2026-07-09, end-to-end pose).
 
     INPUTS is {key: {protein_sequence, peptide_sequence}} (e.g. cognate + scramble).
-    Critical ordering learned live: pin numpy<2 and install kalign BEFORE importing
-    numpy/torch/src, otherwise the AF2-derived code hits the removed np.string_ and the
-    kernel needs a restart. The bundled msa_run binary builds the MSA (no local DB). The
-    output pose is chain A (MHC heavy) + chain B (peptide) only, no b2m/TCR."""
+
+    numpy lesson (learned the hard way, live): do NOT downgrade numpy. On today's Colab
+    image `pip install "numpy<2"` poisons numpy's OWN compiled mtrand.so (a dtype-size
+    ABI wall, 'expected 96 got 88') that survives force-reinstall and restarts. The robust
+    recipe KEEPS stock numpy 2 and shims the AF2-era removals the code relies on
+    (np.string_ / np.unicode_ / np.float_ / np.complex_ / np.bool8, plus np.sum over a
+    generator, which numpy 2 turned into a hard error) BEFORE `from src import ...`. No
+    downgrade, no ABI wall, no kernel restart. kalign is still required by preprocess
+    (else kalign.py joins a None path -> TypeError). The bundled msa_run binary builds the
+    MSA (no local DB). The output pose is chain A (MHC heavy) + chain B (peptide), no
+    b2m/TCR; a cognate 9-mer lands at ~97 mean pLDDT."""
     return {
         "nbformat": 4, "nbformat_minor": 5, "metadata": {"accelerator": "GPU"},
         "cells": [
@@ -43,14 +50,24 @@ def _mhcfine_notebook(inputs: dict) -> dict:
                   "    subprocess.run('git clone https://bitbucket.org/abc-group/mhc-fine.git',\n",
                   "                   shell=True, cwd='/content', check=True)\n",
                   "os.chdir('/content/mhc-fine')\n"),
-            _code("# 2. deps FIRST, before any numpy/torch import.\n",
-                  "# numpy<2: AF2-derived code uses the removed np.string_. kalign: required by\n",
-                  "# preprocess (else kalign.py joins a None path -> TypeError). No restart needed.\n",
+            _code("# 2. deps: keep STOCK numpy 2 (downgrading poisons numpy's mtrand.so). kalign is\n",
+                  "# required by preprocess (else kalign.py joins a None path -> TypeError).\n",
                   "import subprocess\n",
-                  "subprocess.run('pip install -q \"numpy<2\" gdown biopython ml_collections dm-tree einops',\n",
+                  "subprocess.run('pip install -q gdown biopython ml_collections dm-tree einops',\n",
                   "               shell=True, check=True)\n",
                   "subprocess.run('apt-get -qq install -y kalign', shell=True, check=True)\n"),
-            _code("# 3. import (numpy 1.26 loads fresh)\n",
+            _code("# 3. numpy-2 compat shim BEFORE importing src: restore the AF2-era aliases the\n",
+                  "# code uses and make np.sum tolerate a generator (numpy 2 made that a hard error).\n",
+                  "import types, numpy as np\n",
+                  "np.string_ = np.bytes_\n",
+                  "np.unicode_ = np.str_\n",
+                  "np.float_ = np.float64\n",
+                  "np.complex_ = np.complex128\n",
+                  "np.bool8 = np.bool_\n",
+                  "_orig_sum = np.sum\n",
+                  "def _sum(a, *ar, **kw):\n",
+                  "    return _orig_sum(list(a) if isinstance(a, types.GeneratorType) else a, *ar, **kw)\n",
+                  "np.sum = _sum\n",
                   "import torch\n",
                   "assert torch.cuda.is_available(), 'need a GPU runtime'\n",
                   "from src import preprocess, model\n"),

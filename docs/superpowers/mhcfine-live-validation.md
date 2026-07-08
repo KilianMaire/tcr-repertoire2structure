@@ -50,21 +50,44 @@ RESOLVED unknowns:
 
 ## First-try recipe (bake this in; it needs NO runtime restart)
 
-The ONLY ordering trap: Colab ships NumPy 2.x, and the AF2-derived code uses the removed
-`np.string_`. Pin `numpy<2` and, critically, do it BEFORE importing numpy/torch/src, so
-no kernel restart is needed. Also the preprocess template path needs the `kalign` binary
-(apt), else `kalign.py` builds a command with a None path -> `TypeError: sequence item 0:
-expected str instance, NoneType`. Ordered cells for a cold runtime:
+The numpy trap, and the fix (re-validated live 2026-07-09, end-to-end pose). Colab ships
+NumPy 2.x, and the AF2-derived code uses removals from that release: `np.string_`,
+`np.unicode_`, `np.float_`, `np.complex_`, `np.bool8`, and `np.sum(generator)` (numpy 2
+turned the last into a hard `TypeError`). The OBVIOUS fix, `pip install "numpy<2"`, is a
+TRAP: on today's Colab image the downgrade poisons numpy's OWN compiled `mtrand.so` with a
+dtype-size ABI wall ("numpy.dtype size changed, Expected 96 got 88") that resurfaces at
+`model.inference` (lazy `numpy.random` import) and survives `--force-reinstall` and kernel
+restarts. Wasted a long session on it.
+
+The ROBUST recipe KEEPS stock numpy 2 and shims the removals in Python BEFORE
+`from src import ...`. No downgrade, no ABI wall, no restart. Also the preprocess template
+path needs the `kalign` binary (apt), else `kalign.py` builds a command with a None path ->
+`TypeError: sequence item 0: expected str instance, NoneType`. Ordered cells for a cold
+runtime:
 
 1. `git clone https://bitbucket.org/abc-group/mhc-fine.git` ; `cd mhc-fine`.
-2. FIRST, before any import: `pip install -q "numpy<2" gdown biopython ml_collections
-   dm-tree einops` and `apt-get -qq install -y kalign`. (numpy 1.26.4; the opencv/tobler/
-   pytensor "requires numpy>=2" pip warnings are irrelevant to mhcfine.)
-3. `import torch; from src import preprocess, model` (loads numpy 1.26 fresh -> no restart).
+2. deps, keeping stock numpy: `pip install -q gdown biopython ml_collections dm-tree einops`
+   and `apt-get -qq install -y kalign`. Do NOT touch numpy.
+3. numpy-2 shim, THEN import: `np.string_=np.bytes_; np.unicode_=np.str_; np.float_=
+   np.float64; np.complex_=np.complex128; np.bool8=np.bool_`; wrap `np.sum` so a generator
+   arg is `list()`-ed first; then `import torch; from src import preprocess, model`.
 4. `gdown` weights (id 1gz8uF8DKE0CzyX_WeDGOX7xP69LjpaZT, 388 MB) -> data/model/
    mhc_fine_weights.pt ; `chmod +x a3m_generation/msa_run`.
 5. Per target: `get_a3m(prot,a3m,uid)` -> `preprocess_for_inference(prot,pep,a3m)` ->
    `model.Model().inference(np_sample, uid)` -> ./output/{uid}.pdb + {mean_plddt}.
+
+Live proof (2026-07-09): the A*02:01 + GILGFVFTL cognate folded under stock numpy 2.0.2 to
+`{'mean_plddt': 97.77, 'mean_masked_plddt': 95.24}`, output/c0_cognate.pdb = chains A+B,
+2314 atoms. This exact shim+fold sequence is what `notebook.py::_mhcfine_notebook` now
+emits.
+
+Playwright measurement trap (also cost time): Colab keeps a SEPARATE cross-origin
+googleusercontent output iframe PER cell. A scraper that scans all frames for "Error" will
+grab a STALE traceback from an earlier failed cell and declare a still-running fold dead.
+Trust the target cell's own inline stdout stream (RESULT_OK) or a fresh on-disk check
+(`glob output/*.pdb`), not "any frame contains Error". Also: Monaco auto-closes brackets, so
+bracket-heavy one-liners corrupt on `keyboard.type` AND on paste; deliver such payloads as
+base64 and `exec(base64.b64decode('...').decode())` (pure alphanumeric, nothing to corrupt).
 
 Colab driving note (Playwright): code-cell output renders in a cross-origin
 googleusercontent iframe, so read it via `page.frames()`+`frame.evaluate(innerText)`, not
@@ -155,10 +178,21 @@ masked_plddt DELTA (not an absolute threshold), validated on more pairs.
 ## Step 4: notebook adapter WIRED (DONE, branch feat/wire-mhcfine-notebook)
 
 `tools/notebook.build_notebook("mhcfine", inputs)` now returns the real validated recipe
-(no longer a NotImplementedError stub): clone, deps+kalign BEFORE import (numpy<2, no
-restart), weights + chmod msa_run, then a fold loop over INPUTS
-({key: {protein_sequence, peptide_sequence}}, e.g. cognate + scramble) writing
-./output/{key}.pdb. Other tools (tcrdock/affinetune/af3) keep the fail-loud stub. Suite 102/102.
+(no longer a NotImplementedError stub): clone, deps+kalign keeping STOCK numpy 2, a numpy-2
+compat shim before `from src import` (see the corrected recipe above; superseded the
+original numpy<2 pin, which was proven a dead end on 2026-07-09), weights + chmod msa_run,
+then a fold loop over INPUTS ({key: {protein_sequence, peptide_sequence}}, e.g. cognate +
+scramble) writing ./output/{key}.pdb. Other tools (tcrdock/affinetune/af3) keep the
+fail-loud stub.
+
+## Step 6: adapter recipe CORRECTED to stock-numpy-2 shim (DONE, branch fix/mhcfine-numpy2-shim)
+
+Live end-to-end drive of the mhcfine-agent surfaced that the numpy<2 pin from Steps 1-5 is a
+dead end on today's Colab image (mtrand ABI wall at inference). Replaced the pin with the
+keep-stock-numpy-2 + Python shim recipe, proven live to fold the A*02:01+GILGFVFTL cognate
+(plddt 97.77, chains A+B). Tests locked the lesson: `test_mhcfine_keeps_stock_numpy2_no_downgrade`
+(no `numpy<2`/`numpy==1` in the emitted notebook) and `test_mhcfine_shim_precedes_import_so_no_restart`
+(shim + kalign before `from src import`). Suite 105/105.
 
 ## Step 5: adapter EXPOSED to the executor (DONE, branch feat/expose-mhcfine-notebook)
 
