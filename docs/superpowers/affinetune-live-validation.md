@@ -52,24 +52,61 @@ Grounded against the current alphafold_finetune README (commands quoted verbatim
    `python run_prediction.py --targets targets.tsv --outfile_prefix run --model_names model_2_ptm_ft --model_params_files datasets_alphafold_finetune/params/mixed_mhc_pae_run6_af_mhc_params_20640.pkl --ignore_identities`
 5. Read the predicted presentation score out of `run*_final.tsv` for cognate AND scramble.
 
-## Environment blocker (shared with tcrdock, this is the gate)
+## Environment bring-up (VALIDATED live 2026-07-09 on Colab T4, driver 580 / CUDA 12.8)
 
-alphafold_finetune is JAX + an AlphaFold fork pinned to an old Python (3.8/3.9). Today's
-Colab is Python 3.12 + CUDA 12; its jaxlib will not match the pinned jax, exactly the wall
-tcrdock hit (`tcrdock-live-validation.md`, live run 1). So affinetune's live drive is NOT a
-clean pip path like mhcfine was. It needs `condacolab` to bring up a py3.9 env, then
-`pip install` alphafold_finetune's requirements and a jaxlib that matches the Colab GPU.
-Solve the condacolab bring-up ONCE and both tcrdock and affinetune unblock. Until then the
-executor correctly reports not-run; nothing is faked.
+alphafold_finetune is JAX + an AlphaFold fork pinned to old wheels (jax 0.2.22 / jaxlib
+0.1.72+cuda111, cp38). Today's Colab kernel is Python 3.12, so those wheels cannot install
+in-kernel, exactly the wall tcrdock hit. The working pattern is the maintainers' own one
+(their `alphafold_ft_colab_pipeline_v1.ipynb`): DO NOT switch the kernel. Build a conda
+python 3.8 env off to the side and SHELL OUT to it. No condacolab kernel-restart is needed.
+This same env unblocks tcrdock (same JAX/AF family). Proven recipe, in order:
+
+1. Miniforge + a py3.8 env (no kernel restart):
+   `wget -qO /tmp/mf.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh && bash /tmp/mf.sh -b -p /opt/conda`
+   then `/opt/conda/bin/mamba create -y -n af python=3.8` (yields Python 3.8.20).
+2. `git clone https://github.com/phbradley/alphafold_finetune /content/aff` and
+   `/opt/conda/envs/af/bin/pip install -r /content/aff/requirements_colab_python38_v2.txt`
+   (this pins the jaxlib-cuda111 wheel; ~1.5 GB incl. torch 1.10, TF 2.5; ~7 min).
+3. Base AF params `params_model_2_ptm.npz` (dropbox, in the notebook) into
+   `/content/alphafold_params/params/`, plus the dataset bundle (params pkl + example
+   alignments) as in Step 2 of the run recipe above.
+4. THE CUDA FIX (this is what makes it run, not crash): the py3.8 env has jaxlib-cuda111 but
+   NOT the CUDA 11 runtime libs, so run_prediction aborts (RC 134) with
+   `Could not load dynamic library 'libcudart.so.11.0' / 'libcublas.so.11'`. Install them
+   into the env: `/opt/conda/bin/mamba install -y -n af -c conda-forge cudatoolkit=11.1 cudnn`.
+   That provides `libcudart.so.11.0` (-> 11.1.74) and `libcublas.so.11` (-> 11.3). AlphaFold's
+   Evoformer has no convolutions, so the exact cudnn version is not load-critical (mamba
+   pulled cudnn 9.x and inference still runs).
+5. THE LD_LIBRARY_PATH RECIPE (the second gotcha): every shell-out MUST set
+   `LD_LIBRARY_PATH=/opt/conda/envs/af/lib:/usr/lib64-nvidia` and PREPEND, never replace.
+   The env lib gives libcudart/libcublas; `/usr/lib64-nvidia` gives the driver `libcuda.so.1`.
+   Drop the driver dir and you get `cuInit: UNKNOWN ERROR (303)` and a silent CPU fallback
+   (very slow), which looks like a hang. With both dirs present, jax reports
+   `GpuDevice(id=0)` and `Successfully opened dynamic library libcudart.so.11.0`.
+6. Run the prediction as a shell-out to that python (Step 4 of the run recipe), e.g.
+   `cd /content/aff && LD_LIBRARY_PATH=/opt/conda/envs/af/lib:/usr/lib64-nvidia /opt/conda/envs/af/bin/python run_prediction.py --targets one.tsv --outfile_prefix one_test --model_names model_2_ptm_ft --model_params_files datasets_alphafold_finetune/params/mixed_mhc_pae_run6_af_mhc_params_20640.pkl --data_dir /content/alphafold_params/ --ignore_identities`.
+   Proven: the maintainers' example ran end-to-end on the GPU for ~13 min (no crash) once
+   Steps 4-5 were in place.
+
+Playwright reading caveat (learned here): Colab renders shelled-out stdout in a cross-origin
+output iframe. Short cell outputs read fine from the accessibility snapshot right after they
+finish, but a long AF cell's streamed stderr goes STALE in the snapshot (you re-read an old
+cell's traceback). To read a real result, DO NOT trust streamed stdout; either check the
+on-disk file, or make the cell's LAST EXPRESSION a DataFrame (`pd.read_csv(out, sep='\t')`)
+so Colab renders it as a table in the MAIN document, which the snapshot can read.
 
 ## Open unknowns to resolve on the first real run (do NOT guess-fix in the builder)
 
-1. Output score column + DIRECTION. `run*_final.tsv` carries the predicted metric; the
-   likely field is the peptide-MHC PAE (Motmaen uses a PAE-derived score) where LOWER means
-   more likely presented. Confirm the exact column name and whether to invert it before it
-   feeds `verdict_binding` (which treats HIGHER as more presented). The result reader must
-   read the real column, never assume one. (Fetch of run_prediction.py was rate-limited;
-   settle this by reading the actual output file on the first run.)
+1. Output score column + DIRECTION. RESOLVED from run_prediction.py source (lines 162-193):
+   the output file is `{outfile_prefix}_final.tsv` (tab-separated); it writes
+   `{model_name}_pae` (mean predicted aligned error over the complex, e.g.
+   `model_2_ptm_ft_pae`) and per-chain-pair `{model_name}_pae_{chain1}_{chain2}`. The score
+   IS the PAE and LOWER = more likely presented (the bundled BinderClassifier has slope
+   -7.9, so higher pae -> lower binding probability). So the result reader must read
+   `*_final.tsv`, take `<model>_pae`, and INVERT it (e.g. score = -pae) before it feeds
+   `verdict_binding`, which treats HIGHER as more presented. Still to capture live: an actual
+   cognate-vs-scramble pae pair (the numeric read was blocked this session by the output-
+   iframe caveat above, not by the env; the env runs).
 2. b2m in the chainseq. The A*02:01 example row is MHC-alpha/peptide with no b2m. Confirm
    the pMHC model wants alpha only; if so the notebook assembles chainseq from `mhc` +
    `peptide` and ignores `b2m`.
