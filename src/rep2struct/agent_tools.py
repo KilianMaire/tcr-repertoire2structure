@@ -103,28 +103,41 @@ async def list_structure_tools(args):
     return r
 
 
-@tool("record_fold_result", "Record the model paths a fold produced for one clonotype.",
-      {"run_dir": str, "clonotype_id": str, "model_paths": list})
+@tool("record_fold_result", "Record the model paths a fold produced for one clonotype, with the tool used.",
+      {"run_dir": str, "clonotype_id": str, "model_paths": list, "tool": str})
 async def record_fold_result(args):
     rs = RunState(args["run_dir"])
     done = rs.read_stage("folds") if rs.stage_done("folds") else {}
-    done[args["clonotype_id"]] = args["model_paths"]
+    done[args["clonotype_id"]] = {"paths": args["model_paths"],
+                                  "tool": args.get("tool", "protenix")}
     rs.write_stage("folds", done)
-    return _txt(f"recorded {len(args['model_paths'])} models for {args['clonotype_id']}")
+    return _txt(f"recorded {len(args['model_paths'])} models for {args['clonotype_id']} via {args.get('tool', 'protenix')}")
 
 
-@tool("qc_structure", "Score a predicted structure and return a skeptical reliable or suspect verdict.",
-      {"run_dir": str, "clonotype_id": str, "scramble_threshold": float})
+@tool("qc_structure", "Score a fold (per-group threshold) and return a skeptical verdict; output-type aware.",
+      {"run_dir": str, "clonotype_id": str, "scramble_threshold": float,
+       "output_type": str, "tool": str})
 async def qc_structure(args):
+    from .qc import verdict_binding
     rs = RunState(args["run_dir"])
     done = rs.read_stage("folds") if rs.stage_done("folds") else {}
-    paths = done.get(args["clonotype_id"], [])
+    rec = done.get(args["clonotype_id"], {})
+    if isinstance(rec, list):                      # back-compat with the old list shape
+        rec = {"paths": rec, "tool": "protenix"}
+    paths = rec.get("paths", [])
+    tool = args.get("tool", rec.get("tool", "protenix"))
+    output_type = args.get("output_type", "structure")
     if not paths:
-        res = QCResult(args["clonotype_id"], "qc_failed", "no model recorded")
+        res = QCResult(args["clonotype_id"], "qc_failed", "no model recorded", tool=tool)
+    elif output_type == "binding_score":
+        score = float(Path(paths[0]).read_text().strip())
+        res = verdict_binding(score, args["scramble_threshold"], args["clonotype_id"], tool=tool)
     else:
         s = score_model(paths[0])
         s["clonotype_id"] = args["clonotype_id"]
         res = verdict(s, args["scramble_threshold"])
+        res.tool = tool
+        res.calibration_basis = "scramble_null"
     qcs = rs.read_stage("qc") if rs.stage_done("qc") else []
     qcs = [q for q in qcs if q["clonotype_id"] != res.clonotype_id]
     qcs.append(asdict(res))

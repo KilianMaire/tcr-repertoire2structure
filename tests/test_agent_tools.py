@@ -75,6 +75,31 @@ def test_render_final_report(tmp_path):
     assert report_path.exists()
 
 
+def test_record_fold_result_keeps_tool_and_is_back_compatible(tmp_path):
+    from rep2struct.runstate import RunState
+    rd = str(tmp_path / "run")
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "model_paths": ["c1.cif"], "tool": "tcrdock"}))
+    done = RunState(rd).read_stage("folds")
+    assert done["c1"]["tool"] == "tcrdock" and done["c1"]["paths"] == ["c1.cif"]
+
+
+def test_qc_structure_binding_path_uses_binding_verdict(tmp_path):
+    from rep2struct.runstate import RunState
+    rd = str(tmp_path / "run")
+    score_file = tmp_path / "c1.score"
+    score_file.write_text("0.9")
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "model_paths": [str(score_file)],
+         "tool": "affinetune"}))
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": 0.5,
+         "output_type": "binding_score", "tool": "affinetune"}))
+    assert res["structuredContent"]["qc_verdict"] == "presented"
+    stored = RunState(rd).read_stage("qc")
+    assert stored[0]["tool"] == "affinetune"
+
+
 def test_build_server():
     server = at.build_server()
     assert server["name"] == "rep2struct"
