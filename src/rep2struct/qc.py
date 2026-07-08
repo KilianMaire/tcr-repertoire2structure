@@ -76,3 +76,28 @@ def verdict_binding(score: float, threshold: float, clonotype_id: str, tool: str
         tool=tool,
         calibration_basis="binding_score_null",
     )
+
+def score_pose(chains: dict):
+    if "C" not in chains or "E" not in chains:
+        return None
+    mhc, pep = chains["C"], chains["E"]
+    d = np.sqrt(((pep[:, None, :] - mhc[None, :, :]) ** 2).sum(-1))
+    return float((d < 4.5).sum())
+
+
+def mean_confidence(bfactors):
+    if not bfactors:
+        return None
+    return float(sum(bfactors) / len(bfactors))
+
+
+def verdict_groove(pose_atoms, threshold: float, clonotype_id: str, tool: str,
+                   confidence=None) -> QCResult:
+    if pose_atoms is None:
+        return QCResult(clonotype_id, "qc_failed", "no MHC-peptide pose to score", tool=tool)
+    ok = pose_atoms > threshold
+    reason = (f"pose: peptide in groove contact {pose_atoms:.0f} "
+              f"{'beats' if ok else 'not above'} scramble null; "
+              f"model confidence {confidence}")
+    return QCResult(clonotype_id, "pose_reliable" if ok else "pose_suspect", reason,
+                    tool=tool, calibration_basis="groove_scramble_null")

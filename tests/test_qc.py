@@ -75,3 +75,31 @@ def test_common_checks_flags_severe_clash():
     chains = {"C": _chain([0, 0, 0]), "E": _chain([0.1, 0, 0])}
     r = common_checks(chains, expected={"C", "E"})
     assert not r["ok"] and any("clash" in i for i in r["issues"])
+
+
+from rep2struct.qc import score_pose, mean_confidence, verdict_groove
+
+
+def test_score_pose_counts_peptide_mhc_contacts():
+    chains = {"C": _chain([0, 0, 0], [100, 0, 0]), "E": _chain([1, 0, 0], [50, 0, 0])}
+    # only the E atom at (1,0,0) is within 4.5A of a C atom
+    assert score_pose(chains) == 1.0
+    assert score_pose({"E": _chain([0, 0, 0])}) is None  # no MHC heavy chain
+
+
+def test_mean_confidence():
+    assert mean_confidence([80.0, 90.0]) == 85.0
+    assert mean_confidence(None) is None
+    assert mean_confidence([]) is None
+
+
+def test_verdict_groove_is_a_pose_not_a_fold():
+    hi = verdict_groove(20.0, 10.0, "c1", tool="mhcfine", confidence=88.0)
+    lo = verdict_groove(5.0, 10.0, "c2", tool="mhcfine")
+    assert hi.qc_verdict == "pose_reliable" and lo.qc_verdict == "pose_suspect"
+    for r in (hi, lo):
+        assert "pose" in r.reason.lower()
+        for bad in ("fold", "structure", "recognition"):
+            assert bad not in r.reason.lower()
+    assert hi.tool == "mhcfine" and hi.calibration_basis == "groove_scramble_null"
+    assert verdict_groove(None, 10.0, "c3", tool="mhcfine").qc_verdict == "qc_failed"
