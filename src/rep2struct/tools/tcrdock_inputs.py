@@ -40,7 +40,15 @@ def build(clonotype, annotation) -> dict:
     giving tcrdock its own calibration null (never shared with another tool).
     """
     pep = annotation.epitope
-    return {
+    # A class I structural row with no peptide or no MHC allele is not a valid
+    # tcrdock target; fail loud rather than emit a silent mhc=None / crash row.
+    if not pep or not annotation.hla:
+        raise ValueError(
+            f"tcrdock needs both peptide and HLA; got epitope={annotation.epitope!r} "
+            f"hla={annotation.hla!r} for {annotation.clonotype_id}")
+    row = {
         "cognate": {"row": _row(clonotype, annotation, pep)},
         "scramble": {"row": _row(clonotype, annotation, scramble_peptide(pep))},
     }
+    assert list(row["cognate"]["row"].keys()) == COLUMNS  # emitted contract == declared
+    return row

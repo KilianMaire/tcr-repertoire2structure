@@ -49,3 +49,21 @@ def test_tcrdock_bare_hla_passes_through():
     a.hla = "B*07:02"
     out = tcrdock_inputs.build(_clon(), a)
     assert out["cognate"]["row"]["mhc"] == "B*07:02"
+
+
+def test_tcrdock_row_keys_match_declared_columns():
+    out = tcrdock_inputs.build(_clon(), _ann())
+    assert list(out["cognate"]["row"].keys()) == tcrdock_inputs.COLUMNS
+    assert list(out["scramble"]["row"].keys()) == tcrdock_inputs.COLUMNS
+
+
+def test_tcrdock_rejects_missing_peptide_or_hla():
+    import pytest
+    a = _ann()
+    a.epitope = None
+    with pytest.raises(ValueError):
+        tcrdock_inputs.build(_clon(), a)
+    a2 = _ann()
+    a2.hla = None
+    with pytest.raises(ValueError):
+        tcrdock_inputs.build(_clon(), a2)
