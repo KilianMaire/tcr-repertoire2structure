@@ -1,13 +1,10 @@
-from rep2struct.tools import tcrdock_inputs, mhcfine_inputs, affinetune_inputs
+from rep2struct.tools import mhcfine_inputs, affinetune_inputs
 
 FASTA = ">A\nAAAA\n>B\nBBBB\n>C\nCCCC\n>D\nDDDD\n>E\nSIINFEKL\n"
 
 
-def test_tcrdock_keeps_all_five_chains_and_scrambles_peptide():
-    out = tcrdock_inputs.build(FASTA)
-    assert set(out["cognate"]["chains"]) == {"A", "B", "C", "D", "E"}
-    assert out["scramble"]["chains"]["E"] != "SIINFEKL"
-    assert sorted(out["scramble"]["chains"]["E"]) == sorted("SIINFEKL")
+# tcrdock uses a gene-level TSV contract, not chain sequences; its builder is
+# tested in test_tcrdock_inputs.py.
 
 
 def test_mhcfine_drops_tcr_chains():
