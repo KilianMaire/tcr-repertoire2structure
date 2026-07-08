@@ -5,5 +5,5 @@ __pycache__/
 .DS_Store
 runs/
 data/raw/
-*.cif
+
 *.h5ad

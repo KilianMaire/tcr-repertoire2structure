@@ -186,4 +186,4 @@ the same run, de novo epitope prediction, a hosted web UI, batch scale beyond to
 
 - Exact TCRdist confidence tier thresholds (to be calibrated on the validation arm).
 - Class I MHC allele handling when the dextramer or annotation HLA is known vs inferred.
-- Report format (Markdown, HTML, or a claude.ai Artifact for the demo).
+- Report format: HTML (decided). Self contained, theme aware, suitable for the demo.
