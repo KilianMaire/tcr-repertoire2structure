@@ -15,6 +15,35 @@ def _heavy_by_chain(cif_path):
             out[ch.id] = np.array(atoms)
     return out
 
+
+def load_chains(cif_path):
+    return _heavy_by_chain(cif_path)
+
+
+def common_checks(chains: dict, expected: set) -> dict:
+    issues = []
+    missing = expected - set(chains)
+    if missing:
+        issues.append(f"missing chains {sorted(missing)}")
+    finite = all(np.isfinite(a).all() for a in chains.values())
+    if not finite:
+        issues.append("non-finite coords")
+    has_peptide = "E" in chains and len(chains["E"]) > 0
+    min_inter = None
+    if finite and len(chains) >= 2:
+        ids = list(chains)
+        best = np.inf
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                a, b = chains[ids[i]], chains[ids[j]]
+                d = np.sqrt(((a[:, None, :] - b[None, :, :]) ** 2).sum(-1))
+                best = min(best, float(d.min()))
+        min_inter = best
+        if min_inter < 0.5:
+            issues.append("severe steric clash")
+    return {"ok": not issues, "issues": issues, "n_chains": len(chains),
+            "has_peptide": has_peptide, "min_interatomic": min_inter}
+
 def score_model(cif_path) -> dict:
     chains = _heavy_by_chain(cif_path)
     if not {"A", "B", "C", "D", "E"}.issubset(chains):

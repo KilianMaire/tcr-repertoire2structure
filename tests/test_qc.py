@@ -42,3 +42,36 @@ def test_binding_verdict_is_honest_not_a_fold():
 
 def test_binding_verdict_boundary_equality_is_not_presented():
     assert verdict_binding(0.5, 0.5, "c1", tool="affinetune").qc_verdict == "not_presented"
+
+
+import numpy as np
+from rep2struct.qc import common_checks
+
+
+def _chain(*xyz):
+    return np.array(xyz, dtype=float)
+
+
+def test_common_checks_passes_a_sane_two_chain_model():
+    chains = {"C": _chain([0, 0, 0], [10, 0, 0]), "E": _chain([5, 0, 0], [6, 0, 0])}
+    r = common_checks(chains, expected={"C", "E"})
+    assert r["ok"] and r["issues"] == [] and r["has_peptide"] and r["n_chains"] == 2
+
+
+def test_common_checks_flags_missing_chain():
+    chains = {"C": _chain([0, 0, 0])}
+    r = common_checks(chains, expected={"C", "E"})
+    assert not r["ok"] and any("missing" in i for i in r["issues"]) and not r["has_peptide"]
+
+
+def test_common_checks_flags_nonfinite_coords():
+    chains = {"C": _chain([0, 0, 0]), "E": _chain([np.nan, 0, 0])}
+    r = common_checks(chains, expected={"C", "E"})
+    assert not r["ok"] and any("non-finite" in i for i in r["issues"])
+
+
+def test_common_checks_flags_severe_clash():
+    # two different chains with atoms 0.1A apart
+    chains = {"C": _chain([0, 0, 0]), "E": _chain([0.1, 0, 0])}
+    r = common_checks(chains, expected={"C", "E"})
+    assert not r["ok"] and any("clash" in i for i in r["issues"])
