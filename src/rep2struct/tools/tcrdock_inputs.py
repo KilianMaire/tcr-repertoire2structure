@@ -11,8 +11,18 @@ COLUMNS = ["organism", "mhc_class", "mhc", "peptide",
 
 
 def _mhc_allele(hla):
-    # tcrdock wants a bare class I allele name, e.g. "A*02:01" (no "HLA-" prefix).
-    return hla.replace("HLA-", "").strip() if hla else hla
+    # tcrdock wants ONE bare class I allele, e.g. "A*02:01". The reference DB can
+    # return a comma-joined multi-value ("HLA-A*02,HLA-A*02:01") and/or an "HLA-"
+    # prefix, so strip the prefix and keep the most specific token (a 2-field
+    # allele carrying a colon, else the longest).
+    if not hla:
+        return hla
+    tokens = [t.replace("HLA-", "").strip() for t in hla.split(",")]
+    tokens = [t for t in tokens if t]
+    if not tokens:
+        return hla
+    pool = [t for t in tokens if ":" in t] or tokens
+    return max(pool, key=len)
 
 
 def _row(clonotype, annotation, peptide) -> dict:

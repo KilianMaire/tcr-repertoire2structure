@@ -10,6 +10,17 @@ real class I 10x CSV.
 10 column tcrdock TSV: organism, mhc_class, mhc, peptide, va, ja, cdr3a, vb, jb,
 cdr3b. Guards missing peptide/HLA, enforces the column contract. 95/95 green.
 
+## Validation seed data
+
+`data/validation_tcrdock_classI.csv` (8 clonotypes, 16 contig rows): real paired
+class I TCRs pulled from tcr_explorer's records index (human MHCI), 2 clonotypes each
+for GILGFVFTL (flu M1, A*02:01), NLVPMVATV (CMV pp65, A*02:01), GLCTLVAML (EBV BMLF1,
+A*02:01) and KLGGALQAK (A*03:01). Because they come from the index `annotate()`
+searches, they self-match at tcrdist 0 -> high tier, so all 8 build valid tcrdock
+rows offline. Annotation is circular (irrelevant to fold/QC validation). The local
+dextramer fixture is 2 synthetic clonotypes that do NOT annotate (dead end); TABLO is
+3.1M mostly-unannotatable rows.
+
 ## Step 2: real Colab cell (`tcrdock_notebook.py`)
 
 Replace the `raise NotImplementedError` scaffold with the real two step invocation:
@@ -32,9 +43,10 @@ Raised by adversarial review of the builder; each needs a real tcrdock run to se
    field in `Clonotype`. If tcrdock's gene table is keyed by `gene*allele` and does
    not tolerate a bare J gene (or silently assumes `*01`), that is a data model gap:
    add `traj_allele`/`trbj_allele` upstream. Check against tcrdock's genes TSV.
-3. HLA formatting: builder strips only a leading `HLA-`. Confirm tcrdock accepts
-   2 field (`A*02:01`); check 3 field (`A*02:01:01`) and any lowercase input from the
-   real annotation output. Extend `_mhc_allele` only against tcrdock's allele lookup.
+3. HLA formatting: RESOLVED for the multi-value case. Real annotation output returns
+   comma-joined values like `HLA-A*02,HLA-A*02:01`; `_mhc_allele` now strips `HLA-`
+   and keeps the most specific (colon-bearing) token, giving a clean `A*02:01`. Still
+   to confirm live: 3 field (`A*02:01:01`) and lowercase input against tcrdock's lookup.
 4. Scramble degeneracy (pre-existing, in `construct_io.scramble_peptide`): for very
    short or homopolymer like peptides the reverse+rotate can equal the original,
    weakening the calibration null. Backlog; verify the real peptides are not degenerate.

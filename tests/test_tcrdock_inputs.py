@@ -51,6 +51,21 @@ def test_tcrdock_bare_hla_passes_through():
     assert out["cognate"]["row"]["mhc"] == "B*07:02"
 
 
+def test_tcrdock_normalizes_multivalue_hla():
+    # real reference DB returns comma-joined multi-value HLA; keep the specific one
+    a = _ann()
+    a.hla = "HLA-A*02,HLA-A*02:01"
+    out = tcrdock_inputs.build(_clon(), a)
+    assert out["cognate"]["row"]["mhc"] == "A*02:01"
+
+
+def test_tcrdock_bare_single_field_hla_survives():
+    a = _ann()
+    a.hla = "HLA-A*02"          # no 2-field token available: keep what we have
+    out = tcrdock_inputs.build(_clon(), a)
+    assert out["cognate"]["row"]["mhc"] == "A*02"
+
+
 def test_tcrdock_row_keys_match_declared_columns():
     out = tcrdock_inputs.build(_clon(), _ann())
     assert list(out["cognate"]["row"].keys()) == tcrdock_inputs.COLUMNS
