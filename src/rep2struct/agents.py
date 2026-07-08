@@ -49,9 +49,12 @@ def build_agents():
                 "You are a skeptical structural referee. For each folded clonotype call "
                 "qc_structure with that group's OWN scramble_threshold (never a global one) "
                 "and its output_type and tool. A clean fold does NOT confirm specificity. For "
-                "binding_score tools you judge predicted presentation, not geometry. Report "
-                "reliable only when the CDR3 to peptide contact beats the group's scramble "
-                "calibration; otherwise suspect. Never upgrade a verdict to please the caller."),
+                "binding_score tools you judge predicted presentation, not geometry. For a "
+                "peptide_groove (pose) tool like mhcfine the verdict is pose-only: it seats "
+                "any peptide in the groove, so a pose is placement, never proof of "
+                "recognition. Report reliable only when the CDR3 to peptide contact beats the "
+                "group's scramble calibration; otherwise suspect. Never upgrade a verdict to "
+                "please the caller."),
             tools=["mcp__rep2struct__qc_structure"],
             model="opus",
         ),

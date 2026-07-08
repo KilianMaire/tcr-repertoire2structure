@@ -93,15 +93,21 @@ def test_mean_confidence():
     assert mean_confidence([]) is None
 
 
-def test_verdict_groove_is_a_pose_not_a_fold():
-    hi = verdict_groove(20.0, 10.0, "c1", tool="mhcfine", confidence=88.0)
-    lo = verdict_groove(5.0, 10.0, "c2", tool="mhcfine")
-    assert hi.qc_verdict == "pose_reliable" and lo.qc_verdict == "pose_suspect"
-    for r in (hi, lo):
-        assert "pose" in r.reason.lower()
-        for bad in ("fold", "structure", "recognition"):
-            assert bad not in r.reason.lower()
-    assert hi.tool == "mhcfine" and hi.calibration_basis == "groove_scramble_null"
-    none_verdict = verdict_groove(None, 10.0, "c3", tool="mhcfine")
-    assert none_verdict.qc_verdict == "pose_failed"
-    assert "pose" in none_verdict.reason.lower()
+def test_verdict_groove_is_pose_only_never_specificity():
+    # Honest semantics: any in-groove pose is "pose_only" (placement), regardless of
+    # contact count. There is NO reliable/suspect split, because live calibration
+    # showed groove contact does not separate a binder from a scrambled non-binder.
+    v = verdict_groove(20.0, "c1", tool="mhcfine", confidence=88.0)
+    assert v.qc_verdict == "pose_only"
+    assert "pose" in v.reason.lower() and "placement" in v.reason.lower()
+    for bad in ("fold", "structure"):
+        assert bad not in v.reason.lower()
+    assert v.tool == "mhcfine" and v.calibration_basis == "pose_quality"
+    # a high-contact scramble-like pose gets the SAME verdict as a low-contact one
+    assert verdict_groove(5.0, "c1b", tool="mhcfine").qc_verdict == "pose_only"
+    # no pose / peptide not in the groove -> honest failure
+    for empty in (None, 0.0):
+        f = verdict_groove(empty, "c2", tool="mhcfine")
+        assert f.qc_verdict == "pose_failed"
+        assert "pose" in f.reason.lower()
+        assert f.calibration_basis == "pose_quality"

@@ -12,8 +12,7 @@ EVIDENCE = {
     "qc_failed": "structure (qc failed)",
     "presented": "predicted presentation",
     "not_presented": "predicted presentation",
-    "pose_reliable": "pose (peptide in groove)",
-    "pose_suspect": "pose (peptide in groove)",
+    "pose_only": "pose (peptide in groove)",
     "pose_failed": "pose (qc failed)",
 }
 

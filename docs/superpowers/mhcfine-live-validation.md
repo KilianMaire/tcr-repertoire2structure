@@ -134,8 +134,20 @@ orthogonal QC fact: MHC-Fine seats a non-binder in the groove just as confidentl
 pose alone is not evidence of specificity. Paper = "places a binder accurately"; R2S QC =
 "...and places a non-binder just as well, so a pose is not proof". Complementary.
 
-## Step 3: QC + calibration (superseded by LIVE RUN 2 above)
+## Step 3: QC made honest (DONE, branch feat/honest-peptide-groove)
 
-mhcfine `qc_metric = peptide_groove`. LIVE RUN 2 showed groove-contact and plddt both fail
-to separate cognate from scramble, so the peptide_groove verdict must be conservative
-(pose only, never proof). Distinct from Protenix/tcrdock QC; never shared.
+LIVE RUN 2 showed groove-contact and plddt both fail to separate cognate from scramble, so
+the old `verdict_groove` (pose_reliable if contact beats a "scramble null") was misleading.
+Rewritten to be honest:
+- `verdict_groove(pose_atoms, clonotype_id, tool, confidence=None)` (threshold dropped):
+  returns `pose_only` for any in-groove pose (placement, never a specificity claim) and
+  `pose_failed` when no peptide is in the groove. `calibration_basis="pose_quality"`.
+- Also fixed a latent gate bug the live run exposed: the common gate expected chains
+  {C,D,E} for peptide_groove, but a real mhcfine pose has only MHC heavy (C) + peptide (E),
+  no b2m/TCR, so every real pose would have failed the gate. Gate now expects {C,E}.
+- report EVIDENCE maps `pose_only` and `pose_failed` to "pose (...)"; qc-agent prompt states
+  a groove tool's verdict is pose-only. Suite 100/100.
+
+peptide_groove is distinct from Protenix/tcrdock QC and never shared. If a real specificity
+discriminator is wanted later, the candidate is a per-pair cognate-vs-scramble
+masked_plddt DELTA (not an absolute threshold), validated on more pairs.

@@ -91,13 +91,19 @@ def mean_confidence(bfactors):
     return float(sum(bfactors) / len(bfactors))
 
 
-def verdict_groove(pose_atoms, threshold: float, clonotype_id: str, tool: str,
+def verdict_groove(pose_atoms, clonotype_id: str, tool: str,
                    confidence=None) -> QCResult:
-    if pose_atoms is None:
-        return QCResult(clonotype_id, "pose_failed", "no MHC-peptide pose to score", tool=tool)
-    ok = pose_atoms > threshold
-    reason = (f"pose: peptide in groove contact {pose_atoms:.0f} "
-              f"{'beats' if ok else 'not above'} scramble null; "
-              f"model confidence {confidence}")
-    return QCResult(clonotype_id, "pose_reliable" if ok else "pose_suspect", reason,
-                    tool=tool, calibration_basis="groove_scramble_null")
+    """Honest peptide-groove verdict. Live calibration (2026-07-08) showed groove
+    contact does NOT separate a cognate peptide from a scrambled non-binder: MHC-Fine
+    seats any peptide in the groove just as deeply, and neither the contact count nor
+    plddt discriminates. So there is no reliable/suspect split here. This reports only
+    whether an in-groove pose was produced (placement), never a specificity claim."""
+    if pose_atoms is None or pose_atoms <= 0:
+        return QCResult(clonotype_id, "pose_failed",
+                        "no in-groove peptide pose to score", tool=tool,
+                        calibration_basis="pose_quality")
+    reason = (f"in-groove pose ({pose_atoms:.0f} peptide-MHC contacts, "
+              f"confidence {confidence}); this tool seats any peptide in the groove, "
+              f"so it is placement only, not binding evidence")
+    return QCResult(clonotype_id, "pose_only", reason,
+                    tool=tool, calibration_basis="pose_quality")

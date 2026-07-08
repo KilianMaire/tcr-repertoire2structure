@@ -62,9 +62,9 @@ def test_render_report_msa_basis_is_optional():
 
 def test_pose_row_labelled_pose_not_fold_or_structure():
     c, a = _fixtures()
-    q = QCResult("c1", "pose_reliable",
-                 "peptide in groove contact 20 beats scramble null; model confidence 88.0",
-                 tool="mhcfine", calibration_basis="groove_scramble_null")
+    q = QCResult("c1", "pose_only",
+                 "in-groove pose (20 peptide-MHC contacts); placement only, not binding evidence",
+                 tool="mhcfine", calibration_basis="pose_quality")
     html = render_report(c, a, [q])
     # match the whole table row for this clonotype, independent of template line layout
     row = re.search(r"<tr[^>]*>.*?mhcfine.*?</tr>", html, re.S)

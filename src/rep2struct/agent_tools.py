@@ -135,7 +135,9 @@ async def qc_structure(args):
         res = verdict_binding(score, args["scramble_threshold"], args["clonotype_id"], tool=tool)
         validity_summary = "n/a (binding score)"
     else:
-        expected = {"A", "B", "C", "D", "E"} if metric == "cdr3_peptide" else {"C", "D", "E"}
+        # cdr3_peptide needs the full TCR-pMHC (A-E); peptide_groove is an mhcfine
+        # pose = MHC heavy (C) + peptide (E) only, with no b2m/TCR modelled.
+        expected = {"A", "B", "C", "D", "E"} if metric == "cdr3_peptide" else {"C", "E"}
         chains = load_chains(paths[0])
         cc = common_checks(chains, expected)
         validity_summary = "valid" if cc["ok"] else "; ".join(cc["issues"])
@@ -144,8 +146,7 @@ async def qc_structure(args):
             res = QCResult(args["clonotype_id"], failed,
                            "; ".join(cc["issues"]), tool=tool)
         elif metric == "peptide_groove":
-            res = verdict_groove(score_pose(chains), args["scramble_threshold"],
-                                 args["clonotype_id"], tool=tool)
+            res = verdict_groove(score_pose(chains), args["clonotype_id"], tool=tool)
         else:  # cdr3_peptide
             s = score_model(paths[0])
             s["clonotype_id"] = args["clonotype_id"]

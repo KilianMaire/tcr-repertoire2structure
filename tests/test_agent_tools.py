@@ -166,10 +166,10 @@ def test_qc_structure_dispatches_peptide_groove_for_mhcfine(tmp_path, monkeypatc
     res = _run(at.qc_structure.handler(
         {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": 0.5,
          "output_type": "structure", "tool": "mhcfine"}))
-    # the peptide_groove dispatch yields a pose verdict; the old cdr3_peptide path never did
-    assert res["structuredContent"]["qc_verdict"] in ("pose_reliable", "pose_suspect")
+    # the peptide_groove dispatch yields an honest pose-only verdict (never specificity)
+    assert res["structuredContent"]["qc_verdict"] == "pose_only"
     stored = RunState(rd).read_stage("qc")
-    assert stored[0]["tool"] == "mhcfine" and stored[0]["calibration_basis"] == "groove_scramble_null"
+    assert stored[0]["tool"] == "mhcfine" and stored[0]["calibration_basis"] == "pose_quality"
 
 
 def test_prep_and_select_stamps_group_id(tmp_path):
