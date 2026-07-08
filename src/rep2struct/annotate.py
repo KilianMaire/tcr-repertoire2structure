@@ -1,5 +1,6 @@
 from __future__ import annotations
 from .schema import Clonotype, Annotation
+from .tools.construct_io import normalize_hla
 
 # ascending tcrdist thresholds -> tier. Calibrated on the validation arm later.
 DEFAULT_TIERS = [(12.0, "high"), (24.0, "medium"), (48.0, "low")]
@@ -40,5 +41,5 @@ def annotate(clonotypes, sim_fn=None, tiers=DEFAULT_TIERS):
             out.append(Annotation(
                 clonotype_id=c.id, annotatable=True, confidence_tier=tier,
                 tcrdist=best["distance"], epitope=best.get("epitope"),
-                hla=best.get("mhc"), antigen=best.get("antigen")))
+                hla=normalize_hla(best.get("mhc")), antigen=best.get("antigen")))
     return out

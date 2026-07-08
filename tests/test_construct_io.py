@@ -15,3 +15,10 @@ def test_scramble_is_deterministic_and_non_identity():
 def test_pmhc_only_drops_tcr_chains():
     chains = {"A": "a", "B": "b", "C": "c", "D": "d", "E": "e"}
     assert pmhc_only(chains) == {"C": "c", "D": "d", "E": "e"}
+
+def test_normalize_hla_collapses_multivalue():
+    from rep2struct.tools.construct_io import normalize_hla
+    assert normalize_hla("HLA-A*02,HLA-A*02:01") == "HLA-A*02:01"
+    assert normalize_hla("A*03:01") == "HLA-A*03:01"        # prefix added
+    assert normalize_hla("HLA-A*02:01") == "HLA-A*02:01"    # idempotent
+    assert normalize_hla(None) is None

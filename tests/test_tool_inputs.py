@@ -7,10 +7,22 @@ FASTA = ">A\nAAAA\n>B\nBBBB\n>C\nCCCC\n>D\nDDDD\n>E\nSIINFEKL\n"
 # tested in test_tcrdock_inputs.py.
 
 
-def test_mhcfine_drops_tcr_chains():
+def test_mhcfine_emits_protein_and_peptide_only():
     out = mhcfine_inputs.build(FASTA)
-    assert set(out["cognate"]["chains"]) == {"C", "D", "E"}
-    assert "A" not in out["cognate"]["chains"]
+    # mhcfine takes an MHC protein sequence + peptide, not chain sequences
+    assert out["cognate"]["protein_sequence"] == "CCCC"   # chain C = MHC heavy
+    assert out["cognate"]["peptide_sequence"] == "SIINFEKL"
+    assert "chains" not in out["cognate"]
+    # TCR (A/B) and b2m (D) are not mhcfine inputs
+    assert set(out["cognate"]) == {"protein_sequence", "peptide_sequence"}
+
+
+def test_mhcfine_scrambles_only_peptide():
+    out = mhcfine_inputs.build(FASTA)
+    c, s = out["cognate"], out["scramble"]
+    assert s["protein_sequence"] == c["protein_sequence"]
+    assert s["peptide_sequence"] != c["peptide_sequence"]
+    assert sorted(s["peptide_sequence"]) == sorted(c["peptide_sequence"])
 
 
 def test_affinetune_maps_class_i_fields_and_scrambles():

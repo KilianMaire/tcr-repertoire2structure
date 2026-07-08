@@ -73,3 +73,12 @@ def test_min_distance_neighbour_selected():
     assert a.tcrdist == 5.0
     assert a.epitope == "CLOSEST"
     assert a.antigen == "Ag_close"
+
+def test_annotate_normalizes_multivalue_hla():
+    """Reference DB can return a comma-joined HLA; annotate must store one clean,
+    prefixed allele so downstream sequence tools (Protenix, mhcfine) resolve it."""
+    def sim(cdr3_a, v_a, cdr3_b, v_b, species="human", top_k=5):
+        return ([{"epitope": "GILGFVFTL", "mhc": "HLA-A*02,HLA-A*02:01",
+                  "antigen": "Flu M1", "distance": 2.0}], "tcrdist", 100, [])
+    a = annotate([_clon("c_mv", "CASSIRSSYEQYF")], sim_fn=sim)[0]
+    assert a.hla == "HLA-A*02:01"
