@@ -33,6 +33,12 @@ class FoldJob:
     msa_ref: Optional[str] = None
     status: str = "pending"      # pending, done, failed
     model_paths: list[str] = field(default_factory=list)
+    mhc_class: int = 1           # 1 or 2
+    has_tcr: bool = True
+    species: str = "human"
+    output_needed: str = "structure"   # structure | binding_score
+    tool: Optional[str] = None   # tool the strategist assigned
+    group_id: Optional[str] = None
 
 @dataclass
 class QCResult:
