@@ -12,6 +12,8 @@ EVIDENCE = {
     "qc_failed": "structure (qc failed)",
     "presented": "predicted presentation",
     "not_presented": "predicted presentation",
+    "pose_reliable": "pose (peptide in groove)",
+    "pose_suspect": "pose (peptide in groove)",
 }
 
 def _msa_note(basis) -> str:
@@ -20,10 +22,12 @@ def _msa_note(basis) -> str:
     return "MSA-free (reduced confidence)"
 
 
-def render_report(clonotypes, annotations, qc_results, metrics=None, msa_basis=None) -> str:
+def render_report(clonotypes, annotations, qc_results, metrics=None, msa_basis=None,
+                   validity=None) -> str:
     ann = {a.clonotype_id: a for a in annotations}
     qc = {q.clonotype_id: q for q in qc_results}
     msa_basis = msa_basis or {}
+    validity = validity or {}
     rows = []
     # Keep clonotype input order; never sort by a raw numeric field
     # (e.g. cdr3_pep_atoms) so distances are never presented as a ranking.
@@ -40,6 +44,7 @@ def render_report(clonotypes, annotations, qc_results, metrics=None, msa_basis=N
             "tool": q.tool if q else None,
             "evidence": EVIDENCE.get(q.qc_verdict, "structure") if q else "n/a",
             "msa_note": _msa_note(msa_basis.get(c.id)) if q else None,
+            "validity": validity.get(c.id, "n/a"),
         })
     env = Environment(loader=FileSystemLoader(str(_TPL_DIR)),
                       autoescape=select_autoescape(["html"]))

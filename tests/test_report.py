@@ -1,3 +1,5 @@
+import re
+
 from rep2struct.report import render_report
 from rep2struct.schema import Clonotype, Annotation, QCResult
 
@@ -56,3 +58,30 @@ def test_render_report_msa_basis_is_optional():
     c, a = _fixtures()
     q = QCResult("c1", "reliable", "ok", tool="protenix")
     render_report(c, a, [q])  # must not raise without msa_basis
+
+
+def test_pose_row_labelled_pose_not_fold_or_structure():
+    c, a = _fixtures()
+    q = QCResult("c1", "pose_reliable",
+                 "peptide in groove contact 20 beats scramble null; model confidence 88.0",
+                 tool="mhcfine", calibration_basis="groove_scramble_null")
+    html = render_report(c, a, [q])
+    # match the whole table row for this clonotype, independent of template line layout
+    row = re.search(r"<tr[^>]*>.*?mhcfine.*?</tr>", html, re.S)
+    assert row, "no table row rendered for the mhcfine result"
+    block = row.group(0).lower()
+    assert "pose" in block
+    assert "fold" not in block and "structure" not in block
+
+
+def test_validity_column_renders_when_supplied():
+    c, a = _fixtures()
+    q = QCResult("c1", "reliable", "ok", tool="protenix")
+    html = render_report(c, a, [q], validity={"c1": "valid"})
+    assert "valid" in html.lower()
+
+
+def test_render_report_validity_is_optional():
+    c, a = _fixtures()
+    q = QCResult("c1", "reliable", "ok", tool="protenix")
+    render_report(c, a, [q])  # must not raise without validity
