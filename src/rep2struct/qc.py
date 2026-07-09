@@ -45,21 +45,20 @@ def common_checks(chains: dict, expected: set) -> dict:
             "has_peptide": has_peptide, "min_interatomic": min_inter}
 
 def ensemble_contact(paths):
-    """Mean CDR3(Vbeta)-peptide contact across all Protenix samples of one construct.
+    """MEDIAN CDR3(Vbeta)-peptide contact across all Protenix samples of one construct.
 
-    Protenix emits several samples per seed whose docking pose varies a lot, so a
-    single sample is not representative; the ensemble mean is. Skips any model that
-    does not parse to a full 5-chain TCR-pMHC. Returns (mean|None, n_models, n_valid).
-    """
+    Protenix emits several samples per seed whose docking pose varies wildly (MSA-free
+    especially), so a single sample is not representative. The MEDIAN, not the mean, is
+    the honest summary: it reflects the TYPICAL pose and is insensitive to a lone
+    degenerate sample. Learned from the first live fold, where one scramble sample with
+    591 spurious contacts (vs 0 in the other four) dominated the mean and inverted the
+    cognate-vs-scramble verdict. Skips any model that does not parse to a full 5-chain
+    TCR-pMHC. Returns (median|None, n_models, n_valid)."""
     paths = list(paths)
-    vals = []
-    for p in paths:
-        v = score_model(p).get("cdr3_pep_atoms")
-        if v is not None:
-            vals.append(v)
+    vals = [v for v in (score_model(p).get("cdr3_pep_atoms") for p in paths) if v is not None]
     if not vals:
         return None, len(paths), 0
-    return float(np.mean(vals)), len(paths), len(vals)
+    return float(np.median(vals)), len(paths), len(vals)
 
 
 def score_model(cif_path) -> dict:

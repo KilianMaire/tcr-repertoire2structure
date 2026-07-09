@@ -107,6 +107,23 @@ def test_affinetune_notebook_is_wired_not_a_stub():
         assert marker in src, f"missing recipe marker: {marker}"
 
 
+def test_affinetune_notebook_repatriates_the_scores():
+    nb = build_notebook("affinetune", {"k": {"mhc": "M" * 200, "b2m": "B", "peptide": "GILGFVFTL"}})
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "make_archive" in src and "affinetune_scores" in src
+    assert "from google.colab import files" in src and "files.download" in src
+    assert "DOWNLOAD_SKIPPED" in src
+
+
+def test_tcrdock_notebook_repatriates_the_scores():
+    inputs = {"k": {"row": {"organism": "human", "mhc_class": 1, "mhc": "A*02:01",
+                            "peptide": "GILGFVFTL", "va": "TRAV8-3*01", "ja": "TRAJ42*01",
+                            "cdr3a": "CAV", "vb": "TRBV19*01", "jb": "TRBJ2-7*01", "cdr3b": "CAS"}}}
+    src = "".join(s for cell in build_notebook("tcrdock", inputs)["cells"] for s in cell["source"])
+    assert "make_archive" in src and "tcrdock_scores" in src
+    assert "files.download" in src and "DOWNLOAD_SKIPPED" in src
+
+
 def test_affinetune_inverts_pae_for_verdict_binding():
     # run_prediction pae is LOWER = presented; verdict_binding treats HIGHER = presented.
     # The adapter must write score = -pae, else the verdict is inverted. Lock the direction.

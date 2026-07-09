@@ -157,6 +157,25 @@ def test_build_fold_notebook_writes_wired_protenix_ipynb(tmp_path):
     assert "SIINFEKL" in src                              # peptide embedded
 
 
+def test_list_fold_jobs_marks_done_for_deterministic_resume(tmp_path):
+    # The checkpoint: a job whose result is recorded in the folds stage comes back done=true,
+    # so a resumed run skips it deterministically (not by LLM judgement).
+    from rep2struct.runstate import RunState
+    from rep2struct.schema import FoldJob
+    rd = str(tmp_path / "run")
+    RunState(rd).write_stage("foldjobs", [
+        FoldJob(clonotype_id="a", construct_fasta=">E\nSII"),
+        FoldJob(clonotype_id="b", construct_fasta=">E\nKLM"),
+    ])
+    # record only 'a' as folded
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "a", "model_paths": ["a.cif"], "tool": "protenix"}))
+    res = _run(at.list_fold_jobs.handler({"run_dir": rd}))
+    jobs = {j["clonotype_id"]: j["done"] for j in res["structuredContent"]["jobs"]}
+    assert jobs == {"a": True, "b": False}
+    assert res["structuredContent"]["pending"] == 1
+
+
 def test_render_final_report(tmp_path):
     at.configure()
     rd = str(tmp_path / "run4")

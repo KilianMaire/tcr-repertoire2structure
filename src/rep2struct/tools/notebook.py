@@ -9,6 +9,25 @@ def _code(*lines):
             "outputs": [], "source": list(lines)}
 
 
+def _repatriation_cell(src_dir: str, zip_stem: str):
+    """A final cell that zips src_dir/ and hands it to the browser via files.download, so the
+    Playwright executor pulls every per-construct output back in ONE download, unzips it into
+    the run dir (filenames/paths preserved, so QC finds each construct's cognate/scramble),
+    and records them. Guarded so a headless/API run does not die on the download. Shared by
+    every wired tool so repatriation is uniform across the fleet."""
+    return _code(
+        f"# repatriation: zip {src_dir}/ and hand it back so the agent pulls every output in one\n",
+        "# download; unzip preserves the per-construct names/paths QC needs.\n",
+        "import os, shutil\n",
+        f"shutil.make_archive('/content/{zip_stem}', 'zip', '{src_dir}')\n",
+        f"print('ZIP', '/content/{zip_stem}.zip', os.path.getsize('/content/{zip_stem}.zip'), 'bytes', flush=True)\n",
+        "try:\n",
+        "    from google.colab import files\n",
+        f"    files.download('/content/{zip_stem}.zip')\n",
+        "except Exception as e:\n",
+        "    print('DOWNLOAD_SKIPPED', type(e).__name__, e, flush=True)\n")
+
+
 def _stub_notebook(tool: str, inputs: dict) -> dict:
     """Fail-loud scaffold for a tool whose live Colab cell is not yet validated.
     It embeds the inputs but refuses to fake a result."""
@@ -178,6 +197,9 @@ def _affinetune_notebook(inputs: dict) -> dict:
                   "    print('SCORED', key, 'pae', round(pae, 3), '-> score', round(score, 3), flush=True)\n",
                   "json.dump(scores, open('/content/affinetune_result.json', 'w'), indent=2)\n",
                   "print('DONE', len(scores))\n"),
+            # repatriation: zip the per-construct {cid}_cognate.score / {cid}_scramble.score so
+            # the executor pulls both back and QC's _scramble_null finds the sibling on disk.
+            _repatriation_cell("output", "affinetune_scores"),
         ],
     }
 
@@ -288,6 +310,9 @@ def _tcrdock_notebook(inputs: dict) -> dict:
                   "    print('SCORED', key, 'iface_pae', round(pae, 3), '-> score', round(score, 3), flush=True)\n",
                   "json.dump(scores, open('/content/tcrdock_result.json', 'w'), indent=2)\n",
                   "print('DONE', len(scores))\n"),
+            # repatriation: zip the per-construct {cid}_cognate.score / {cid}_scramble.score so
+            # the executor pulls both back and QC's _scramble_null finds the sibling on disk.
+            _repatriation_cell("output", "tcrdock_scores"),
         ],
     }
 
@@ -339,19 +364,8 @@ def _protenix_notebook(inputs: dict) -> dict:
                   "    print('FOLDED', key, len(manifest[key]), 'models', flush=True)\n",
                   "json.dump(manifest, open('/content/protenix_result.json', 'w'), indent=2)\n",
                   "print('DONE', {k: len(v) for k, v in manifest.items()})\n"),
-            _code("# 4. repatriation: zip the produced CIFs and hand them back so the agent can pull them.\n",
-                  "# The zip keeps the out/{key}/... layout, so after the executor unzips into the run dir\n",
-                  "# every CIF path still carries {cid}_cognate / {cid}_scramble and QC's ensemble + own-\n",
-                  "# scramble calibration finds its pair. files.download triggers the browser download the\n",
-                  "# Playwright executor captures; guarded so a headless/API run does not die here.\n",
-                  "import os, shutil\n",
-                  "shutil.make_archive('/content/protenix_folds', 'zip', 'out')\n",
-                  "print('ZIP', '/content/protenix_folds.zip', os.path.getsize('/content/protenix_folds.zip'), 'bytes', flush=True)\n",
-                  "try:\n",
-                  "    from google.colab import files\n",
-                  "    files.download('/content/protenix_folds.zip')\n",
-                  "except Exception as e:\n",
-                  "    print('DOWNLOAD_SKIPPED', type(e).__name__, e, flush=True)\n"),
+            # repatriation: the zip keeps the out/{cid}_cognate / {cid}_scramble layout QC needs.
+            _repatriation_cell("out", "protenix_folds"),
         ],
     }
 

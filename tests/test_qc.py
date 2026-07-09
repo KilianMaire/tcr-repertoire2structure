@@ -24,16 +24,29 @@ def test_three_chain_model_is_qc_failed():
     assert r.qc_verdict == "qc_failed"
 
 
-def test_ensemble_contact_averages_valid_models_and_skips_bad():
+def test_ensemble_contact_summarizes_valid_models_and_skips_bad():
     from rep2struct.qc import ensemble_contact
     single = score_model(FIX / "cognate_min.cif")["cdr3_pep_atoms"]
-    # two copies of the same cognate -> mean equals the single-model contact
-    mean, n_models, n_valid = ensemble_contact([str(FIX / "cognate_min.cif")] * 2)
-    assert mean == single and n_models == 2 and n_valid == 2
+    # two copies of the same cognate -> median equals the single-model contact
+    med, n_models, n_valid = ensemble_contact([str(FIX / "cognate_min.cif")] * 2)
+    assert med == single and n_models == 2 and n_valid == 2
     # a 3-chain model is not a valid TCR-pMHC and is skipped, not counted
-    mean2, n_models2, n_valid2 = ensemble_contact(
+    med2, n_models2, n_valid2 = ensemble_contact(
         [str(FIX / "cognate_min.cif"), str(FIX / "threechain_min.cif")])
-    assert mean2 == single and n_models2 == 2 and n_valid2 == 1
+    assert med2 == single and n_models2 == 2 and n_valid2 == 1
+
+
+def test_ensemble_contact_median_ignores_a_degenerate_outlier(monkeypatch):
+    # Regression from the first live fold: scramble samples were [0, 591, 0, 0, 0]; the mean
+    # (118) was dominated by the lone 591 pose and flipped the verdict. The MEDIAN reflects
+    # the typical pose (0) and ignores the outlier.
+    from rep2struct import qc
+    scores = {"s0": 0.0, "s1": 591.0, "s2": 0.0, "s3": 0.0, "s4": 0.0}
+    monkeypatch.setattr(qc, "score_model", lambda p: {"cdr3_pep_atoms": scores[p], "n_chains": 5})
+    med, n_models, n_valid = qc.ensemble_contact(list(scores))
+    assert n_models == 5 and n_valid == 5
+    assert med == 0.0                                  # median ignores the lone 591
+    assert sum(scores.values()) / 5 > 100              # the mean would have been dominated by it
 
 
 def test_ensemble_contact_all_invalid_is_none():

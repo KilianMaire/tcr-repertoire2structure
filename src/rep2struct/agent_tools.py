@@ -108,8 +108,15 @@ async def prep_and_select(args):
 async def list_fold_jobs(args):
     rs = RunState(args["run_dir"])
     jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
-    r = _txt(f"{len(jobs)} jobs")
-    r["structuredContent"] = {"jobs": jobs}
+    # Deterministic resume checkpoint: the folds stage is the on-disk record that survives a
+    # crash between clonotypes. Mark each job done iff its result is already recorded, so the
+    # executor skips it by fact, not by the LLM's judgement, and only folds the pending ones.
+    done = rs.read_stage("folds") if rs.stage_done("folds") else {}
+    for j in jobs:
+        j["done"] = j["clonotype_id"] in done
+    n_pending = sum(1 for j in jobs if not j["done"])
+    r = _txt(f"{len(jobs)} jobs ({n_pending} pending, {len(jobs) - n_pending} done)")
+    r["structuredContent"] = {"jobs": jobs, "pending": n_pending}
     return r
 
 
