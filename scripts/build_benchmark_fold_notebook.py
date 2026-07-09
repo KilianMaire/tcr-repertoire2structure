@@ -82,8 +82,10 @@ def _harden(nb):
     """Insert the checkpoint guard before the fold cell and replace the fold cell
     with the self-healing version. The fold cell is the one that runs `protenix pred`."""
     cells = nb["cells"]
+    # match the actual CLI invocation, not the substring "protenix pred" which also
+    # appears inside the INPUTS cell comment ("protenix prediction JSON").
     fold_idx = next(i for i, c in enumerate(cells)
-                    if "protenix pred" in "".join(c.get("source", [])))
+                    if "protenix pred -i" in "".join(c.get("source", [])))
     cells[fold_idx] = _HARDENED_FOLD
     cells.insert(fold_idx, _CKPT_GUARD)
     return nb
