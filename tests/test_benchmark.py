@@ -25,3 +25,30 @@ def test_per_hla_novel_counts():
     assert out["HLA-A*02:01"]["n_total"] == 2
     assert out["HLA-A*02:01"]["n_novel"] == 1
     assert out["HLA-A*02:01"]["epitopes"]["GILGFVFTL"]["n_novel"] == 1
+
+def test_decoys_same_hla_first():
+    panel = [("GILGFVFTL","HLA-A*02:01"), ("NLVPMVATV","HLA-A*02:01"),
+             ("GLCTLVAML","HLA-A*02:01"), ("KLGGALQAK","HLA-A*03:01")]
+    d = bm.decoys_for("GILGFVFTL", "HLA-A*02:01", panel, k=2)
+    assert d == ["GLCTLVAML", "NLVPMVATV"]
+    assert "GILGFVFTL" not in d
+
+def test_decoys_same_hla_only_no_cross_fill():
+    panel = [("GILGFVFTL","HLA-A*02:01"), ("KLGGALQAK","HLA-A*03:01")]
+    assert bm.decoys_for("GILGFVFTL", "HLA-A*02:01", panel, k=3) == []
+
+def test_scramble_preserves_composition_and_differs():
+    s = bm.scramble_peptide("GILGFVFTL", seed=1)
+    assert sorted(s) == sorted("GILGFVFTL") and s != "GILGFVFTL"
+
+def test_build_panel_constructs_keys_and_peptides():
+    clono = Clonotype("c1","TRAV1","CAA","TRBV1","CBB",5)
+    tcr_seqs = {"c1": {"A": "AAAA", "B": "BBBB"}}
+    mhc_seqs = {"HLA-A*02:01": {"heavy": "HHHH", "b2m": "MMMM"}}
+    jobs = bm.build_panel_constructs(clono, "GILGFVFTL", "HLA-A*02:01",
+                                     ["NLVPMVATV"], tcr_seqs, mhc_seqs)
+    assert set(jobs) == {"GILGFVFTL", "NLVPMVATV", "__scramble__"}
+    assert ">E\nGILGFVFTL" in jobs["GILGFVFTL"].construct_fasta
+    scr_pep = jobs["__scramble__"].construct_fasta.split(">E\n")[1].split("\n")[0]
+    assert sorted(scr_pep) == sorted("GILGFVFTL")
+    assert jobs["GILGFVFTL"].clonotype_id == "c1"
