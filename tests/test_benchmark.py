@@ -83,3 +83,18 @@ def test_retrieval_tie_is_not_a_win():
 def test_retrieval_excludes_scramble_key():
     r = bm.retrieval_result({"COG": 5.0, "D": 1.0, "__scramble__": 99.0}, "COG")
     assert r["top1"] is True and "__scramble__" not in r["ranked"]
+
+def test_cdr3b_plddt_none_when_substring_absent():
+    assert bm.model_cdr3b_plddt(str(FIX/"cognate_min.cif"), "AAAA", "ZZZZ") is None
+
+def test_cdr3b_plddt_returns_float_or_none_when_located():
+    v = bm.model_cdr3b_plddt(str(FIX/"cognate_min.cif"), "BBBB", "BB")
+    assert v is None or isinstance(v, float)
+
+def test_model_cdr3b_plddt_none_when_no_chain_b_seq():
+    assert bm.model_cdr3b_plddt(str(FIX/"cognate_min.cif"), "", "CASS") is None
+
+def test_sequence_baseline_top1():
+    assert bm.sequence_baseline_top1("GILGFVFTL", "GILGFVFTL") is True
+    assert bm.sequence_baseline_top1("NLVPMVATV", "GILGFVFTL") is False
+    assert bm.sequence_baseline_top1(None, "GILGFVFTL") is False

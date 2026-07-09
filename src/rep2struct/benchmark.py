@@ -1,9 +1,11 @@
 from __future__ import annotations
 from collections import defaultdict
 import random as _random
+import warnings
+import numpy as np
 from .schema import Annotation
 from .foldprep import build_construct
-from .qc import ensemble_contact
+from .qc import ensemble_contact, mean_confidence
 
 def is_novel(tcrdist, leak_thr: float = 1.0) -> bool:
     return tcrdist is None or tcrdist > leak_thr
@@ -78,3 +80,36 @@ def auroc(pairs):
             den += 1
             num += 1.0 if cog > d else (0.5 if cog == d else 0.0)
     return None if den == 0 else num / den
+
+def _residue_bfactors(cif_path, chain_id):
+    from Bio.PDB import MMCIFParser
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        m = next(MMCIFParser(QUIET=True).get_structure("x", str(cif_path)).get_models())
+    for ch in m:
+        if ch.id == chain_id:
+            return [float(np.mean([a.get_bfactor() for a in r])) for r in ch]
+    return None
+
+def model_cdr3b_plddt(cif_path, chain_b_seq, cdr3b):
+    """Mean pLDDT over the CDR3beta residues, located as a substring of chain B."""
+    if not chain_b_seq or not cdr3b:
+        return None
+    start = chain_b_seq.find(cdr3b)
+    if start < 0:
+        return None
+    bfs = _residue_bfactors(cif_path, "B")
+    if bfs is None or start + len(cdr3b) > len(bfs):
+        return None
+    return mean_confidence(bfs[start:start + len(cdr3b)])
+
+def cdr3b_plddt_by_epitope(paths_by_epitope, chain_b_seq, cdr3b):
+    out = {}
+    for ep, paths in paths_by_epitope.items():
+        vals = [v for v in (model_cdr3b_plddt(p, chain_b_seq, cdr3b) for p in paths)
+                if v is not None]
+        out[ep] = float(np.median(vals)) if vals else None
+    return out
+
+def sequence_baseline_top1(annotation_epitope, cognate):
+    return annotation_epitope == cognate
