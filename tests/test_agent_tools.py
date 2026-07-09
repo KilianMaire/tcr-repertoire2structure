@@ -405,3 +405,26 @@ def test_qc_persists_validity_na_for_binding_score(tmp_path):
     _run(at.qc_structure.handler({"run_dir": rd, "clonotype_id": "c1",
         "scramble_threshold": 0.5, "output_type": "binding_score", "tool": "affinetune"}))
     assert RunState(rd).read_stage("validity")["c1"] == "n/a (binding score)"
+
+
+def test_render_final_report_reads_msa_manifest(tmp_path):
+    # The report states the ACTUAL per-clonotype MSA basis from the repatriated manifest,
+    # overriding the prep-time msa_basis on the foldjob.
+    import json
+    from rep2struct.runstate import RunState
+    from rep2struct.schema import Clonotype, Annotation, QCResult, FoldJob
+    at.configure()
+    rd = str(tmp_path / "run")
+    rs = RunState(rd)
+    rs.write_stage("ingest", [Clonotype(id="c1", trav="", cdr3a="", trbv="", cdr3b="", size=1)])
+    rs.write_stage("annotate", [Annotation(clonotype_id="c1", annotatable=True,
+                                           confidence_tier="high", epitope="X")])
+    rs.write_stage("foldjobs", [FoldJob(clonotype_id="c1", construct_fasta=">E\nX", msa_basis="none")])
+    rs.write_stage("qc", [__import__("dataclasses").asdict(QCResult("c1", "reliable", "ok", tool="protenix"))])
+    # a repatriated manifest sits somewhere under the run dir
+    md = tmp_path / "run" / "folds_cif"; md.mkdir(parents=True)
+    (md / "c1_msa_manifest.json").write_text(json.dumps(
+        {"A": {"got_msa": True}, "B": {"got_msa": True}, "C": {"got_msa": True}, "D": {"got_msa": False}}))
+    out = _run(at.render_final_report.handler({"run_dir": rd}))
+    html = Path(out["structuredContent"]["report_path"]).read_text()
+    assert "MSA colab_cpu (3/4 chains)" in html   # not "MSA-free", the foldjob prep value

@@ -105,3 +105,33 @@ def test_qc_failed_row_for_structure_tools_still_says_structure():
     row = re.search(r"<tr[^>]*>.*?protenix.*?</tr>", html, re.S)
     assert row, "no table row rendered for the protenix result"
     assert "structure (qc failed)" in row.group(0).lower()
+
+
+def test_msa_basis_from_manifest():
+    from rep2struct.report import msa_basis_from_manifest
+    assert msa_basis_from_manifest(
+        {"A": {"got_msa": True}, "B": {"got_msa": True},
+         "C": {"got_msa": True}, "D": {"got_msa": True}}) == "colab_cpu:4/4"
+    assert msa_basis_from_manifest(
+        {"A": {"got_msa": True}, "B": {"got_msa": False},
+         "C": {"got_msa": True}, "D": {"got_msa": False}}) == "colab_cpu:2/4"
+    # nothing got an MSA -> honestly MSA-free
+    assert msa_basis_from_manifest({"A": {"got_msa": False}, "B": {"got_msa": False}}) == "none"
+
+
+def test_msa_note_renders_manifest_basis():
+    from rep2struct.report import _msa_note
+    assert _msa_note("colab_cpu:3/4") == "MSA colab_cpu (3/4 chains)"
+    assert _msa_note("colab_cpu") == "MSA colab_cpu"
+    assert _msa_note("none") == "MSA-free (reduced confidence)"
+    assert _msa_note(None) == "MSA-free (reduced confidence)"
+
+
+def test_render_report_shows_manifest_msa_basis():
+    from rep2struct.report import render_report
+    from rep2struct.schema import Clonotype, Annotation, QCResult
+    c = Clonotype(id="c1", trav="", cdr3a="", trbv="", cdr3b="", size=1)
+    a = Annotation(clonotype_id="c1", annotatable=True, confidence_tier="high", epitope="X")
+    q = QCResult("c1", "reliable", "ok", tool="protenix")
+    html = render_report([c], [a], [q], msa_basis={"c1": "colab_cpu:3/4"})
+    assert "MSA colab_cpu (3/4 chains)" in html

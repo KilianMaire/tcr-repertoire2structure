@@ -16,9 +16,21 @@ EVIDENCE = {
     "pose_failed": "pose (qc failed)",
 }
 
+def msa_basis_from_manifest(manifest: dict) -> str:
+    """Per-clonotype MSA manifest {chain_id: {"got_msa": bool}, ...} -> basis token.
+    "colab_cpu:k/n" when any chain got an MSA, else "none" (honestly MSA-free)."""
+    chains = [v for v in manifest.values() if isinstance(v, dict) and "got_msa" in v]
+    n = len(chains)
+    k = sum(1 for v in chains if v["got_msa"])
+    return f"colab_cpu:{k}/{n}" if k else "none"
+
+
 def _msa_note(basis) -> str:
-    if basis in ("local", "colab_cpu"):
-        return f"MSA {basis}"
+    if basis and basis.startswith("colab_cpu"):
+        _, _, cnt = basis.partition(":")
+        return f"MSA colab_cpu ({cnt} chains)" if cnt else "MSA colab_cpu"
+    if basis == "local":
+        return "MSA local"
     return "MSA-free (reduced confidence)"
 
 

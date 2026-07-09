@@ -280,12 +280,25 @@ async def qc_structure(args):
 @tool("render_final_report", "Render the self contained HTML report for the run.",
       {"run_dir": str})
 async def render_final_report(args):
+    import json as _json
+    from .report import msa_basis_from_manifest
     clons = _load(args["run_dir"], "ingest", Clonotype)
     anns = _load(args["run_dir"], "annotate", Annotation)
     rs = RunState(args["run_dir"])
     qcs = [QCResult(**d) for d in (rs.read_stage("qc") if rs.stage_done("qc") else [])]
     fjs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
-    msa_basis = {j["clonotype_id"]: j.get("msa_basis") for j in fjs}
+    manifests = {}
+    for mp in Path(args["run_dir"]).rglob("*_msa_manifest.json"):
+        cid = mp.name[:-len("_msa_manifest.json")]
+        try:
+            manifests[cid] = _json.loads(mp.read_text())
+        except (ValueError, OSError):
+            pass
+    msa_basis = {
+        j["clonotype_id"]: (msa_basis_from_manifest(manifests[j["clonotype_id"]])
+                            if j["clonotype_id"] in manifests else j.get("msa_basis"))
+        for j in fjs
+    }
     validity = rs.read_stage("validity") if rs.stage_done("validity") else {}
     html = render_report(clons, anns, qcs, msa_basis=msa_basis, validity=validity)
     out = Path(args["run_dir"]) / "report.html"
