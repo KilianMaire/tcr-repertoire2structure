@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import run_benchmark_arm as drv
 from rep2struct.schema import Clonotype, Annotation
+from rep2struct import benchmark as bm2
 
 def test_select_seed_novel_first():
     clonos = [Clonotype("a","TRAV1","CAA","TRBV1","CBB",2),
@@ -51,3 +52,27 @@ def test_select_balance_epitopes_spreads_across_cognates():
                                balance_epitopes=True)
     cogs = sorted(truth[cid][0] for cid in sel)
     assert cogs == ["P", "Q"]   # one from each epitope, not P+P
+
+def _make_folds(root, cid, cognate, decoy, fix):
+    for ep, src in [(cognate, fix/"cognate_min.cif"), (decoy, fix/"scramble_min.cif"),
+                    ("__scramble__", fix/"scramble_min.cif")]:
+        d = root / "folds" / f"{cid}__{ep}"
+        d.mkdir(parents=True)
+        (d / "sample_0.cif").write_bytes(src.read_bytes())
+
+def test_evaluate_stratifies_and_scores(tmp_path):
+    fix = Path(__file__).parent / "fixtures"
+    cid = "a"
+    _make_folds(tmp_path, cid, "GILGFVFTL", "NLVPMVATV", fix)
+    manifest = {cid: {"cognate": "GILGFVFTL", "hla": "HLA-A*02:01",
+                      "decoys": ["NLVPMVATV"],
+                      "epitopes": {"GILGFVFTL": "", "NLVPMVATV": "", "__scramble__": ""},
+                      "novel": True, "tcrdist": None, "samples": 1,
+                      "cdr3b": "CASS", "chain_b_seq": "XXCASSXX"}}
+    anns = [Annotation(cid, False, "unannotatable", tcrdist=None)]
+    out = bm2.evaluate(manifest, tmp_path / "folds", anns)
+    assert out["novel"]["n"] == 1
+    assert "scramble_contrast" in out["novel"]
+    assert out["novel"]["tcr_blind_acc"] in (0.0, 1.0)
+    assert out["novel"]["contact"]["top1"] in (0.0, 1.0)
+    assert out["novel"]["seq"]["top1"] == 0.0

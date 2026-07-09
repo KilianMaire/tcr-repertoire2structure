@@ -1,5 +1,6 @@
 from __future__ import annotations
 from collections import defaultdict
+from pathlib import Path as _Path
 import random as _random
 import warnings
 import numpy as np
@@ -191,3 +192,66 @@ def paired_contrast(pairs, seed=0, n_boot=2000):
     return {"n": len(deltas), "frac_cognate_higher": frac,
             "mean_delta": sum(deltas) / len(deltas),
             "ci_delta": [boots[int(0.025 * n_boot)], boots[min(int(0.975 * n_boot), n_boot - 1)]]}
+
+def _paths_by_epitope(manifest_entry, folds_root, cid):
+    out = {}
+    for ep in manifest_entry["epitopes"]:
+        d = _Path(folds_root) / f"{cid}__{ep}"
+        out[ep] = sorted(str(p) for p in d.rglob("*.cif")) if d.exists() else []
+    return out
+
+def evaluate(manifest, folds_root, annotations):
+    seq_ep = {a.clonotype_id: getattr(a, "epitope", None) for a in annotations}
+    per = {}
+    for cid, ent in manifest.items():
+        pbe = _paths_by_epitope(ent, folds_root, cid)
+        contacts = contact_by_epitope(pbe)
+        cog = ent["cognate"]
+        if contacts.get(cog) is None:
+            continue
+        panel_contacts = {e: v for e, v in contacts.items() if e != "__scramble__"}
+        plddts = cdr3b_plddt_by_epitope(
+            {e: p for e, p in pbe.items() if e != "__scramble__"},
+            ent.get("chain_b_seq"), ent.get("cdr3b"))
+        decoy_c = [contacts[e] for e in ent["decoys"] if contacts.get(e) is not None]
+        per[cid] = {
+            "novel": ent["novel"],
+            "panel_contacts": panel_contacts,
+            "contact_top1": 1.0 if retrieval_result(contacts, cog)["top1"] else 0.0,
+            "plddt_top1": 1.0 if retrieval_result(plddts, cog)["top1"] else 0.0,
+            "seq_top1": 1.0 if sequence_baseline_top1(seq_ep.get(cid), cog) else 0.0,
+            "cognate_contact": contacts.get(cog),
+            "scramble_contact": contacts.get("__scramble__"),
+            "decoy_contacts": decoy_c,
+            "cognate": cog,
+            "n_panel": 1 + len(ent["decoys"]),
+        }
+
+    def strata(rows):
+        if not rows:
+            return {"n": 0}
+        chance = sum(1.0 / r["n_panel"] for r in rows) / len(rows)
+        contact_hits = [r["contact_top1"] for r in rows]
+        pt, lo, hi = bootstrap_ci(contact_hits)
+        blind_acc = tcr_blind_accuracy([r["panel_contacts"] for r in rows],
+                                       [r["cognate"] for r in rows])
+        perm_p = label_permutation_p(pt, [r["panel_contacts"] for r in rows],
+                                     [r["cognate"] for r in rows])
+        pc = paired_contrast([(r["cognate_contact"], r["scramble_contact"]) for r in rows])
+        return {
+            "n": len(rows), "chance": chance, "tcr_blind_acc": blind_acc,
+            "contact": {"top1": pt, "ci": [lo, hi],
+                        "p_vs_chance": permutation_p(contact_hits, chance),
+                        "p_vs_blind": perm_p,
+                        "auroc": auroc([(r["cognate_contact"], r["decoy_contacts"])
+                                        for r in rows if r["cognate_contact"] is not None])},
+            "plddt": {"top1": sum(r["plddt_top1"] for r in rows) / len(rows)},
+            "seq": {"top1": sum(r["seq_top1"] for r in rows) / len(rows)},
+            "scramble_contrast": pc,
+        }
+
+    rows = list(per.values())
+    return {"per_tcr": per,
+            "overall": strata(rows),
+            "novel": strata([r for r in rows if r["novel"]]),
+            "leaked": strata([r for r in rows if not r["novel"]])}

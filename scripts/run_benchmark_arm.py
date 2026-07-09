@@ -96,6 +96,37 @@ def _emit_cmd(args):
                   tcr_seqs, mhc_seqs, args.k, args.samples, clono_by_id)
     print(f"emitted {len(selected)} TCRs x (1+{args.k}+scramble) constructs to {args.out_dir}")
 
+def score_manifest(out_dir, dextramer_dir):
+    out_dir = Path(out_dir)
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    clons, labels, hlas = labeled_clonotypes(
+        f"{dextramer_dir}/donor1_all_contig_annotations.csv",
+        f"{dextramer_dir}/donor1_binarized_matrix.csv")
+    sel = [c for c in clons if c.id in manifest]
+    anns = annotations_from_cache(sel, nearest_cache(sel))
+    result = bm.evaluate(manifest, out_dir / "folds", anns)
+    lines = ["# Structure-vs-sequence benchmark (seed = calibration pilot)\n"]
+    for strat in ("overall", "novel", "leaked"):
+        s = result[strat]
+        if s.get("n", 0) == 0:
+            lines.append(f"## {strat}: no TCRs\n"); continue
+        c = s["contact"]; pc = s["scramble_contrast"]
+        lines.append(f"## {strat} (n={s['n']}, naive chance={s['chance']:.3f}, "
+                     f"TCR-blind null={s['tcr_blind_acc']:.3f})")
+        lines.append(f"- contact Top-1 {c['top1']:.2f} CI[{c['ci'][0]:.2f},{c['ci'][1]:.2f}] "
+                     f"p_vs_chance={c['p_vs_chance']:.4f} p_vs_blind={c['p_vs_blind']:.4f} "
+                     f"AUROC={c['auroc']}")
+        lines.append(f"- CO-PRIMARY within-pair cognate>scramble: "
+                     f"frac={pc['frac_cognate_higher']} mean_delta={pc['mean_delta']} "
+                     f"CI{pc['ci_delta']} (n_pairs={pc['n']})")
+        lines.append(f"- CDR3b pLDDT Top-1 {s['plddt']['top1']:.2f} | "
+                     f"sequence Top-1 {s['seq']['top1']:.2f}\n")
+    (out_dir / "benchmark_report.md").write_text("\n".join(lines))
+    return result
+
+def _score_cmd(args):
+    print(json.dumps(score_manifest(args.out_dir, args.dextramer_dir)["novel"], indent=2))
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -106,6 +137,9 @@ def main():
     e.add_argument("--unannotatable-only", action="store_true")
     e.add_argument("--balance-epitopes", action="store_true")
     e.set_defaults(func=_emit_cmd)
+    s = sub.add_parser("score")
+    s.add_argument("out_dir"); s.add_argument("dextramer_dir")
+    s.set_defaults(func=_score_cmd)
     args = ap.parse_args()
     args.func(args)
 
