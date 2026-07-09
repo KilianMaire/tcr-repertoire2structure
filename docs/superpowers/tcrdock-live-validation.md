@@ -104,6 +104,14 @@ you, both surfaced live and fixed:
 2. Biopython gotcha: TCRdock imports `Bio.SubsMat` (removed in biopython >= 1.80). The
    AF 2.3.2 requirements already pin biopython==1.79, so installing that set fixes it;
    but if you install anything that upgrades biopython, force it back to 1.79.
+3. Install ORDER gotcha (caught only on a CLEAN env, 2026-07-09): jaxlib is NOT published
+   on PyPI (it lives only on Google's jax_releases find-links index), and `chex` inside
+   the AF 2.3.2 requirements needs jaxlib. So `jax`+`jaxlib` (with the `-f
+   https://storage.googleapis.com/jax-releases/jax_cuda_releases.html` index) MUST be
+   installed BEFORE `pip install -r af232.txt`, otherwise the af232 resolve fails with
+   "No matching distribution found for jaxlib>=0.1.37 (from chex)". The first warm run
+   masked this because the affinetune stack had already put a jaxlib in place; a curated
+   from-scratch env exposed it.
 
 ### Open unknowns, all SETTLED live
 

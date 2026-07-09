@@ -39,6 +39,18 @@ def test_tcrdock_notebook_is_wired_not_a_stub():
         assert marker in src, f"missing recipe marker: {marker}"
 
 
+def test_tcrdock_installs_jaxlib_before_af232_requirements():
+    # Learned live 2026-07-09: jaxlib is NOT on PyPI (only Google's jax_releases index), and
+    # chex inside the AF 2.3.2 requirements needs jaxlib. So jax+jaxlib (with the find-links
+    # index) MUST be installed BEFORE `pip install -r af232.txt`, else the af232 resolve dies
+    # with "No matching distribution found for jaxlib". Lock the order.
+    inputs = {"k": {"row": {"organism": "human", "mhc_class": 1, "mhc": "A*02:01",
+                            "peptide": "GILGFVFTL", "va": "TRAV8-3*01", "ja": "TRAJ42*01",
+                            "cdr3a": "CAV", "vb": "TRBV19*01", "jb": "TRBJ2-7*01", "cdr3b": "CAS"}}}
+    src = "".join(s for cell in build_notebook("tcrdock", inputs)["cells"] for s in cell["source"])
+    assert src.index("jaxlib==0.3.25") < src.index("install -q -r /content/af232.txt")
+
+
 def test_tcrdock_inverts_pae_for_verdict_binding():
     # interface PAE is LOWER = more recognized; verdict_binding treats HIGHER = more
     # recognized. The adapter must write score = -pae, else the verdict is inverted.
