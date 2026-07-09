@@ -113,3 +113,81 @@ def cdr3b_plddt_by_epitope(paths_by_epitope, chain_b_seq, cdr3b):
 
 def sequence_baseline_top1(annotation_epitope, cognate):
     return annotation_epitope == cognate
+
+def bootstrap_ci(hits, n_boot: int = 2000, seed: int = 0):
+    n = len(hits)
+    pt = sum(hits) / n if n else 0.0
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    rng = _random.Random(seed)
+    means = []
+    for _ in range(n_boot):
+        s = sum(hits[rng.randrange(n)] for _ in range(n)) / n
+        means.append(s)
+    means.sort()
+    lo = means[int(0.025 * n_boot)]
+    hi = means[min(int(0.975 * n_boot), n_boot - 1)]
+    return pt, lo, hi
+
+def permutation_p(hits, chance, n_perm: int = 10000, seed: int = 0):
+    n = len(hits)
+    obs = sum(hits)
+    if n == 0:
+        return 1.0
+    rng = _random.Random(seed)
+    ge = 0
+    for _ in range(n_perm):
+        draw = sum(1 for _ in range(n) if rng.random() < chance)
+        if draw >= obs:
+            ge += 1
+    return (ge + 1) / (n_perm + 1)
+
+def tcr_blind_prediction(per_tcr_contacts):
+    sums, counts = {}, {}
+    for d in per_tcr_contacts:
+        for ep, v in d.items():
+            if v is None:
+                continue
+            sums[ep] = sums.get(ep, 0.0) + v
+            counts[ep] = counts.get(ep, 0) + 1
+    if not sums:
+        return None
+    means = {ep: sums[ep] / counts[ep] for ep in sums}
+    return max(means, key=means.get)
+
+def tcr_blind_accuracy(per_tcr_contacts, cognates):
+    pred = tcr_blind_prediction(per_tcr_contacts)
+    if pred is None:
+        return 0.0
+    return sum(1 for cog in cognates if cog == pred) / len(cognates) if cognates else 0.0
+
+def label_permutation_p(observed_top1_mean, per_tcr_contacts, cognates,
+                        n_perm=10000, seed=0):
+    rng = _random.Random(seed)
+    cogs = list(cognates)
+    ge = 0
+    for _ in range(n_perm):
+        perm = cogs[:]
+        rng.shuffle(perm)
+        hits = 0
+        for d, cog in zip(per_tcr_contacts, perm):
+            r = retrieval_result({**d, "__scramble__": None}, cog)
+            hits += 1 if r["top1"] else 0
+        if hits / len(cogs) >= observed_top1_mean:
+            ge += 1
+    return (ge + 1) / (n_perm + 1)
+
+def paired_contrast(pairs, seed=0, n_boot=2000):
+    vals = [(c, s) for (c, s) in pairs if c is not None and s is not None]
+    if not vals:
+        return {"n": 0, "frac_cognate_higher": None, "mean_delta": None, "ci_delta": [None, None]}
+    deltas = [c - s for (c, s) in vals]
+    frac = sum(1 for d in deltas if d > 0) / len(deltas)
+    rng = _random.Random(seed)
+    boots = []
+    for _ in range(n_boot):
+        boots.append(sum(deltas[rng.randrange(len(deltas))] for _ in range(len(deltas))) / len(deltas))
+    boots.sort()
+    return {"n": len(deltas), "frac_cognate_higher": frac,
+            "mean_delta": sum(deltas) / len(deltas),
+            "ci_delta": [boots[int(0.025 * n_boot)], boots[min(int(0.975 * n_boot), n_boot - 1)]]}

@@ -98,3 +98,32 @@ def test_sequence_baseline_top1():
     assert bm.sequence_baseline_top1("GILGFVFTL", "GILGFVFTL") is True
     assert bm.sequence_baseline_top1("NLVPMVATV", "GILGFVFTL") is False
     assert bm.sequence_baseline_top1(None, "GILGFVFTL") is False
+
+def test_bootstrap_ci_all_hits():
+    pt, lo, hi = bm.bootstrap_ci([True]*20, n_boot=500, seed=1)
+    assert pt == 1.0 and lo == 1.0 and hi == 1.0
+
+def test_bootstrap_ci_bounds_order():
+    pt, lo, hi = bm.bootstrap_ci([True, False, True, False], n_boot=500, seed=1)
+    assert 0.0 <= lo <= pt <= hi <= 1.0
+
+def test_permutation_p_strong_signal():
+    assert bm.permutation_p([True]*10, chance=0.25, n_perm=5000, seed=1) < 0.01
+    assert bm.permutation_p([False]*10, chance=0.25, n_perm=5000, seed=1) > 0.5
+
+def test_tcr_blind_accuracy_constant_predictor():
+    contacts = [{"A": 9.0, "B": 1.0}, {"A": 8.0, "B": 2.0}]
+    assert bm.tcr_blind_prediction(contacts) == "A"
+    assert bm.tcr_blind_accuracy(contacts, ["A", "B"]) == 0.5
+
+def test_label_permutation_p_runs():
+    contacts = [{"A": 9.0, "B": 1.0}, {"B": 9.0, "A": 1.0}]
+    p = bm.label_permutation_p(1.0, contacts, ["A", "B"], n_perm=1000, seed=1)
+    assert 0.0 <= p <= 1.0
+
+def test_paired_contrast_cognate_higher():
+    r = bm.paired_contrast([(10.0, 2.0), (8.0, 3.0)])
+    assert r["frac_cognate_higher"] == 1.0 and r["mean_delta"] > 0
+
+def test_paired_contrast_empty():
+    assert bm.paired_contrast([(None, 1.0)])["n"] == 0
