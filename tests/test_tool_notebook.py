@@ -157,7 +157,7 @@ def test_protenix_notebook_is_wired_not_a_stub():
     assert "GILGFVFTL" in src and "TFVFGLIGL" in src   # both records embedded
     assert "c1_cognate" in src and "c1_scramble" in src
     for marker in ("pip install -q protenix", "protenix pred",
-                   "protenix_base_default_v1.0.0", "--use_msa false"):
+                   "protenix_base_default_v1.0.0"):
         assert marker in src, f"missing recipe marker: {marker}"
 
 
@@ -171,14 +171,6 @@ def test_protenix_notebook_repatriates_the_cifs():
     assert "from google.colab import files" in src and "files.download" in src
     # guarded so a non-Colab run does not die on the download
     assert "DOWNLOAD_SKIPPED" in src
-
-
-def test_protenix_is_msa_free_matching_the_documented_reliable_run():
-    # The run documented as reliable (docs/fold_qc_results.md) folded MSA-free after the
-    # Protenix MSA server throttled; msa.py keeps the MSA out of the fold runtime. Lock it.
-    nb = build_notebook("protenix", {"k": [{"name": "k", "sequences": [], "covalent_bonds": []}]})
-    src = "".join(s for cell in nb["cells"] for s in cell["source"])
-    assert "--use_msa false" in src and "--use_msa true" not in src
 
 
 def test_inputs_cell_is_executable_python_with_bool_and_none():
@@ -217,3 +209,16 @@ def test_protenix_notebook_computes_pre_fold_msa():
     assert "colabfold.batch" not in src
     # the MSA cell must run BEFORE the write-inputs cell (the fold consumes the injected paths)
     assert src.index("run_mmseqs2") < src.index("write each embedded record")
+
+
+def test_protenix_fold_honors_provided_msa_not_use_msa_false():
+    # Live-verified on A100: `--use_msa false` SUPPRESSED the injected unpairedMsaPath. Protenix
+    # folded single-sequence, giving confidence (pLDDT ~46, pTM ~0.30) identical to the MSA-free
+    # run. Drop the flag so the provided a3m is consumed, and print positive proof the MSA reached
+    # the folded JSON (so a wrong cell-execution order can never silently fold MSA-free again).
+    inputs = {"c1_cognate": [{"name": "cognate", "sequences": [
+        {"proteinChain": {"sequence": "M" * 100, "count": 1, "id": ["C"]}},
+        {"proteinChain": {"sequence": "GILGFVFTL", "count": 1, "id": ["E"]}}], "covalent_bonds": []}]}
+    src = "".join(s for cell in build_notebook("protenix", inputs)["cells"] for s in cell["source"])
+    assert "--use_msa false" not in src   # the flag that blocked the provided MSA is gone
+    assert "MSA_IN_INPUT" in src           # fold prints how many chains carry unpairedMsaPath at fold time

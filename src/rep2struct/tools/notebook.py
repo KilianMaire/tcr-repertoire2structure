@@ -326,11 +326,12 @@ def _protenix_notebook(inputs: dict) -> dict:
     A-E construct; the QC reads the produced CIFs, ensembles the CDR3-peptide contact
     over the samples, and calibrates the cognate against its own scramble.
 
-    MSA-free by design (--use_msa false): the run documented as reliable folded single
-    sequence after the Protenix MSA server throttled and wedged an MSA batch, and the
-    whole msa.py stage exists to keep the MSA out of the fold runtime. MSA-free models
-    are lower confidence, which widens the sample spread and makes the scramble-margin
-    the honest thing the QC reports.
+    A pre-fold MSA cell (ColabFold MMseqs2, CPU) computes one unpaired a3m per unique
+    protein chain and injects it as unpairedMsaPath, so the fold runs with a real MSA
+    without Protenix's own MSA server (which once throttled and wedged an MSA batch)
+    ever touching the GPU runtime. The Protenix-internal search stays off; the provided
+    a3m is consumed. The peptide chain is excluded (single sequence), and any chain whose
+    search failed folds MSA-free, so the scramble-margin the QC reports stays honest.
     """
     return {
         "nbformat": 4, "nbformat_minor": 5, "metadata": {"accelerator": "GPU"},
@@ -382,20 +383,26 @@ def _protenix_notebook(inputs: dict) -> dict:
                   "for cid, man in manifests.items():\n",
                   "    json.dump(man, open(f'out/{cid}_msa_manifest.json', 'w'))\n",
                   "print('MSA done; a3m:', len(seq2path), 'manifests:', list(manifests), flush=True)\n"),
-            _code("# 2. write each embedded record to inputs/{key}.json\n",
+            _code("# 2. write each embedded record to inputs/{key}.json (INPUTS now carries the\n",
+                  "# unpairedMsaPath the MSA cell injected). Print positive proof the MSA reached the\n",
+                  "# JSON, so a wrong cell-run order can never silently fold MSA-free.\n",
                   "import json, os\n",
                   "os.makedirs('inputs', exist_ok=True)\n",
                   "for key, obj in INPUTS.items():\n",
                   "    json.dump(obj, open(f'inputs/{key}.json', 'w'))\n",
-                  "print('wrote', len(INPUTS), 'inputs:', sorted(INPUTS))\n"),
-            _code("# 3. fold each record MSA-free (single sequence), collect the produced CIFs\n",
+                  "n_msa = sum('unpairedMsaPath' in ch['proteinChain']\n",
+                  "            for obj in INPUTS.values() for ch in obj[0]['sequences'])\n",
+                  "print('wrote', len(INPUTS), 'inputs:', sorted(INPUTS), 'MSA_IN_INPUT chains:', n_msa)\n"),
+            _code("# 3. fold each record with the provided MSA (unpairedMsaPath in the JSON). The\n",
+                  "# use-msa-false flag is intentionally omitted: live-verified that it suppresses the\n",
+                  "# provided a3m and folds single-sequence. Protenix now consumes the precomputed MSA.\n",
                   "import glob, os, subprocess, json\n",
                   "os.makedirs('out', exist_ok=True)\n",
                   "manifest = {}\n",
                   "for key in sorted(INPUTS):\n",
                   "    if not glob.glob(f'out/{key}/**/*.cif', recursive=True):\n",
                   "        cmd = (f'protenix pred -i inputs/{key}.json -o out/{key} -s 101 '\n",
-                  "               '-n protenix_base_default_v1.0.0 --use_msa false --use_default_params true')\n",
+                  "               '-n protenix_base_default_v1.0.0 --use_default_params true')\n",
                   "        print('RUN', key, flush=True)\n",
                   "        r = subprocess.run(cmd, shell=True, capture_output=True, text=True)\n",
                   "        if r.returncode != 0:\n",

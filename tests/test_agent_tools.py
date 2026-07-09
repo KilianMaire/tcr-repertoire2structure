@@ -153,7 +153,7 @@ def test_build_fold_notebook_writes_wired_protenix_ipynb(tmp_path):
     src = "".join(s for cell in nb["cells"] for s in cell["source"])
     assert "NotImplementedError" not in src              # protenix is wired
     assert "c1_cognate" in src and "c1_scramble" in src   # cognate + scramble pair, keyed by cid
-    assert "protenix pred" in src and "--use_msa false" in src
+    assert "protenix pred" in src and "unpairedMsaPath" in src  # folds with the provided MSA
     assert "SIINFEKL" in src                              # peptide embedded
 
 
