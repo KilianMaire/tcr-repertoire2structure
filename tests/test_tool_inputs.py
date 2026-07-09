@@ -1,4 +1,5 @@
-from rep2struct.tools import mhcfine_inputs, affinetune_inputs
+import pytest
+from rep2struct.tools import mhcfine_inputs, affinetune_inputs, protenix_inputs
 
 FASTA = ">A\nAAAA\n>B\nBBBB\n>C\nCCCC\n>D\nDDDD\n>E\nSIINFEKL\n"
 
@@ -30,3 +31,31 @@ def test_affinetune_maps_class_i_fields_and_scrambles():
     assert out["cognate"]["mhc"] == "CCCC" and out["cognate"]["b2m"] == "DDDD"
     assert out["cognate"]["peptide"] == "SIINFEKL"
     assert out["scramble"]["peptide"] != "SIINFEKL"
+
+
+def _protenix_chain(record, chain_id):
+    seqs = record[0]["sequences"]
+    return next(s["proteinChain"]["sequence"] for s in seqs
+               if s["proteinChain"]["id"] == [chain_id])
+
+
+def test_protenix_emits_all_five_chains():
+    out = protenix_inputs.build(FASTA)
+    cog = out["cognate"]
+    assert [_protenix_chain(cog, c) for c in "ABCDE"] == ["AAAA", "BBBB", "CCCC", "DDDD", "SIINFEKL"]
+    assert cog[0]["covalent_bonds"] == []
+
+
+def test_protenix_scrambles_only_the_peptide():
+    out = protenix_inputs.build(FASTA)
+    cog, scr = out["cognate"], out["scramble"]
+    # A-D identical, only E (peptide) shuffled to the same multiset
+    for c in "ABCD":
+        assert _protenix_chain(scr, c) == _protenix_chain(cog, c)
+    assert _protenix_chain(scr, "E") != "SIINFEKL"
+    assert sorted(_protenix_chain(scr, "E")) == sorted("SIINFEKL")
+
+
+def test_protenix_raises_on_missing_chain():
+    with pytest.raises(ValueError):
+        protenix_inputs.build(">A\nAAAA\n>E\nSIINFEKL\n")  # missing B, C, D

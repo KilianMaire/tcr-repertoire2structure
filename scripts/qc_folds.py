@@ -15,27 +15,18 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-import numpy as np
-from rep2struct.qc import score_model
+from rep2struct.qc import ensemble_contact as _ensemble_contact
 from rep2struct.report import render_report
 from rep2struct.runstate import RunState
 from rep2struct.schema import Clonotype, Annotation, QCResult
 
 
 def ensemble_contact(fold_dir: Path):
-    """Mean CDR3(Vbeta) to peptide contact across ALL Protenix samples for one
-    construct. Protenix emits several samples per seed whose docking pose varies
-    a lot, so a single sample is not representative; the ensemble mean is. Returns
-    (mean, n_models, n_valid) or (None, 0, 0) if no 5-chain model parsed."""
-    cifs = sorted(fold_dir.rglob("*.cif"))
-    vals = []
-    for c in cifs:
-        v = score_model(c).get("cdr3_pep_atoms")
-        if v is not None:
-            vals.append(v)
-    if not vals:
-        return None, len(cifs), 0
-    return float(np.mean(vals)), len(cifs), len(vals)
+    """Mean CDR3(Vbeta) to peptide contact across ALL Protenix samples in a fold
+    directory. Globs the CIFs and delegates to the shared qc.ensemble_contact so
+    the script and the agent QC path use one implementation."""
+    cifs = sorted(str(c) for c in fold_dir.rglob("*.cif"))
+    return _ensemble_contact(cifs)
 
 
 def main():

@@ -123,6 +123,35 @@ def test_affinetune_ninemer_only_is_fail_loud():
     assert "NotImplementedError" in src and "only 9-mers wired" in src
 
 
+def test_protenix_notebook_is_wired_not_a_stub():
+    inputs = {
+        "c1_cognate": [{"name": "cognate", "sequences": [
+            {"proteinChain": {"sequence": "GILGFVFTL", "count": 1, "id": ["E"]}}],
+            "covalent_bonds": []}],
+        "c1_scramble": [{"name": "scramble", "sequences": [
+            {"proteinChain": {"sequence": "TFVFGLIGL", "count": 1, "id": ["E"]}}],
+            "covalent_bonds": []}],
+    }
+    nb = build_notebook("protenix", inputs)
+    json.dumps(nb)                                     # serializable
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "live cell not yet validated" not in src    # not the fail-loud stub scaffold
+    assert "TODO(live)" not in src
+    assert "GILGFVFTL" in src and "TFVFGLIGL" in src   # both records embedded
+    assert "c1_cognate" in src and "c1_scramble" in src
+    for marker in ("pip install -q protenix", "protenix pred",
+                   "protenix_base_default_v1.0.0", "--use_msa false"):
+        assert marker in src, f"missing recipe marker: {marker}"
+
+
+def test_protenix_is_msa_free_matching_the_documented_reliable_run():
+    # The run documented as reliable (docs/fold_qc_results.md) folded MSA-free after the
+    # Protenix MSA server throttled; msa.py keeps the MSA out of the fold runtime. Lock it.
+    nb = build_notebook("protenix", {"k": [{"name": "k", "sequences": [], "covalent_bonds": []}]})
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "--use_msa false" in src and "--use_msa true" not in src
+
+
 def test_inputs_cell_is_executable_python_with_bool_and_none():
     # JSON literals (false/null/true) are NOT valid Python; the INPUTS cell must
     # embed a Python literal so it executes in Jupyter/Colab without NameError.

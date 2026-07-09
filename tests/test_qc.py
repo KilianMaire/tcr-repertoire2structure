@@ -24,6 +24,24 @@ def test_three_chain_model_is_qc_failed():
     assert r.qc_verdict == "qc_failed"
 
 
+def test_ensemble_contact_averages_valid_models_and_skips_bad():
+    from rep2struct.qc import ensemble_contact
+    single = score_model(FIX / "cognate_min.cif")["cdr3_pep_atoms"]
+    # two copies of the same cognate -> mean equals the single-model contact
+    mean, n_models, n_valid = ensemble_contact([str(FIX / "cognate_min.cif")] * 2)
+    assert mean == single and n_models == 2 and n_valid == 2
+    # a 3-chain model is not a valid TCR-pMHC and is skipped, not counted
+    mean2, n_models2, n_valid2 = ensemble_contact(
+        [str(FIX / "cognate_min.cif"), str(FIX / "threechain_min.cif")])
+    assert mean2 == single and n_models2 == 2 and n_valid2 == 1
+
+
+def test_ensemble_contact_all_invalid_is_none():
+    from rep2struct.qc import ensemble_contact
+    mean, n_models, n_valid = ensemble_contact([str(FIX / "threechain_min.cif")])
+    assert mean is None and n_models == 1 and n_valid == 0
+
+
 def test_binding_verdict_presented_and_not_presented():
     hi = verdict_binding(0.9, 0.5, "c1", tool="affinetune")
     lo = verdict_binding(0.3, 0.5, "c2", tool="affinetune")

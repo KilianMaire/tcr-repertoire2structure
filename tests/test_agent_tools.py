@@ -66,6 +66,72 @@ def test_qc_tool_flags_scramble(tmp_path):
     assert out["structuredContent"]["qc_verdict"] == "suspect"
 
 
+def _clean_five_chains():
+    # a well-separated synthetic 5-chain TCR-pMHC so the common-gate passes; the ensemble
+    # contact itself is read from the real CIF fixtures, this only satisfies the validity gate.
+    import numpy as np
+    return {c: np.array([[i * 40.0, 0, 0], [i * 40.0 + 10, 0, 0]], float)
+            for i, c in enumerate("ABCDE")}
+
+
+def test_qc_protenix_ensembles_and_uses_own_scramble_null(tmp_path, monkeypatch):
+    # Protenix (cdr3_peptide) records a cognate + scramble pair per clonotype, named
+    # {cid}_cognate / {cid}_scramble. QC must ensemble the cognate samples and calibrate
+    # against this clonotype's OWN scramble ensemble, ignoring the caller's scalar.
+    import shutil
+    from rep2struct import qc
+    from rep2struct.runstate import RunState
+    monkeypatch.setattr(qc, "load_chains", lambda p: _clean_five_chains())  # bypass the toy-fixture clash gate
+    rd = str(tmp_path / "run")
+    cog = tmp_path / "z_cognate.cif"; shutil.copy(FIX / "cognate_min.cif", cog)   # high contact
+    scr = tmp_path / "z_scramble.cif"; shutil.copy(FIX / "scramble_min.cif", scr)  # low contact
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "z", "model_paths": [str(cog), str(scr)],
+         "tool": "protenix"}))
+    # a deliberately huge scalar threshold (999) would force suspect if it were used;
+    # the derived scramble null (lower than the cognate contact) must win -> reliable.
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "z", "scramble_threshold": 999.0,
+         "output_type": "structure", "tool": "protenix"}))
+    assert res["structuredContent"]["qc_verdict"] == "reliable"
+    stored = RunState(rd).read_stage("qc")
+    assert stored[0]["tool"] == "protenix" and stored[0]["calibration_basis"] == "scramble_null"
+
+
+def test_qc_protenix_cognate_losing_to_its_scramble_is_suspect(tmp_path, monkeypatch):
+    # Beat-the-null gate: swap the roles so the "cognate" is the low-contact scramble
+    # fixture and the "scramble" is the high-contact cognate fixture -> suspect.
+    import shutil
+    from rep2struct import qc
+    monkeypatch.setattr(qc, "load_chains", lambda p: _clean_five_chains())
+    rd = str(tmp_path / "run")
+    cog = tmp_path / "z_cognate.cif"; shutil.copy(FIX / "scramble_min.cif", cog)   # low contact
+    scr = tmp_path / "z_scramble.cif"; shutil.copy(FIX / "cognate_min.cif", scr)   # high contact
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "z", "model_paths": [str(cog), str(scr)],
+         "tool": "protenix"}))
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "z", "scramble_threshold": 0.0,
+         "output_type": "structure", "tool": "protenix"}))
+    assert res["structuredContent"]["qc_verdict"] == "suspect"
+
+
+def test_build_fold_notebook_writes_wired_protenix_ipynb(tmp_path):
+    import json
+    from rep2struct.runstate import RunState
+    from rep2struct.schema import FoldJob
+    rd = str(tmp_path / "run")
+    fasta = ">A\nAAAA\n>B\nBBBB\n>C\nCCCCMHC\n>D\nDDDD\n>E\nSIINFEKL\n"
+    RunState(rd).write_stage("foldjobs", [FoldJob(clonotype_id="c1", construct_fasta=fasta)])
+    res = _call(at.build_fold_notebook, {"run_dir": rd, "clonotype_id": "c1", "tool": "protenix"})
+    nb = json.loads(Path(res["structuredContent"]["notebook_path"]).read_text())
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "NotImplementedError" not in src              # protenix is wired
+    assert "c1_cognate" in src and "c1_scramble" in src   # cognate + scramble pair, keyed by cid
+    assert "protenix pred" in src and "--use_msa false" in src
+    assert "SIINFEKL" in src                              # peptide embedded
+
+
 def test_render_final_report(tmp_path):
     at.configure()
     rd = str(tmp_path / "run4")

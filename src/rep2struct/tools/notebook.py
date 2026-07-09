@@ -292,9 +292,60 @@ def _tcrdock_notebook(inputs: dict) -> dict:
     }
 
 
+def _protenix_notebook(inputs: dict) -> dict:
+    """Protenix adapter, the default TCR-pMHC workhorse (recipe proven on the TABLO
+    folds in docs/fold_qc_results.md).
+
+    INPUTS is {key: <protenix prediction JSON>} with the cognate and scramble records
+    (keys prefixed by clonotype id, e.g. c1_cognate / c1_scramble). Each folds the full
+    A-E construct; the QC reads the produced CIFs, ensembles the CDR3-peptide contact
+    over the samples, and calibrates the cognate against its own scramble.
+
+    MSA-free by design (--use_msa false): the run documented as reliable folded single
+    sequence after the Protenix MSA server throttled and wedged an MSA batch, and the
+    whole msa.py stage exists to keep the MSA out of the fold runtime. MSA-free models
+    are lower confidence, which widens the sample spread and makes the scramble-margin
+    the honest thing the QC reports.
+    """
+    return {
+        "nbformat": 4, "nbformat_minor": 5, "metadata": {"accelerator": "GPU"},
+        "cells": [
+            _code("# protenix inputs (embedded): {key: <protenix prediction JSON>} (cognate + scramble)\n",
+                  "INPUTS = ", repr(inputs)),
+            _code("# 1. install Protenix + show GPU\n",
+                  "import subprocess\n",
+                  "print(subprocess.run('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader',\n",
+                  "                     shell=True, capture_output=True, text=True).stdout)\n",
+                  "subprocess.run('pip install -q protenix', shell=True, check=True)\n"),
+            _code("# 2. write each embedded record to inputs/{key}.json\n",
+                  "import json, os\n",
+                  "os.makedirs('inputs', exist_ok=True)\n",
+                  "for key, obj in INPUTS.items():\n",
+                  "    json.dump(obj, open(f'inputs/{key}.json', 'w'))\n",
+                  "print('wrote', len(INPUTS), 'inputs:', sorted(INPUTS))\n"),
+            _code("# 3. fold each record MSA-free (single sequence), collect the produced CIFs\n",
+                  "import glob, os, subprocess, json\n",
+                  "os.makedirs('out', exist_ok=True)\n",
+                  "manifest = {}\n",
+                  "for key in sorted(INPUTS):\n",
+                  "    if not glob.glob(f'out/{key}/**/*.cif', recursive=True):\n",
+                  "        cmd = (f'protenix pred -i inputs/{key}.json -o out/{key} -s 101 '\n",
+                  "               '-n protenix_base_default_v1.0.0 --use_msa false --use_default_params true')\n",
+                  "        print('RUN', key, flush=True)\n",
+                  "        r = subprocess.run(cmd, shell=True, capture_output=True, text=True)\n",
+                  "        if r.returncode != 0:\n",
+                  "            print('FAIL', key, (r.stdout + r.stderr)[-1500:]); continue\n",
+                  "    manifest[key] = sorted(glob.glob(f'out/{key}/**/*.cif', recursive=True))\n",
+                  "    print('FOLDED', key, len(manifest[key]), 'models', flush=True)\n",
+                  "json.dump(manifest, open('/content/protenix_result.json', 'w'), indent=2)\n",
+                  "print('DONE', {k: len(v) for k, v in manifest.items()})\n"),
+        ],
+    }
+
+
 # Tools whose live Colab cell has been validated and wired to a real recipe.
 _WIRED = {"mhcfine": _mhcfine_notebook, "affinetune": _affinetune_notebook,
-          "tcrdock": _tcrdock_notebook}
+          "tcrdock": _tcrdock_notebook, "protenix": _protenix_notebook}
 
 
 def build_notebook(tool: str, inputs: dict) -> dict:

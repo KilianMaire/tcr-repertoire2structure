@@ -44,6 +44,24 @@ def common_checks(chains: dict, expected: set) -> dict:
     return {"ok": not issues, "issues": issues, "n_chains": len(chains),
             "has_peptide": has_peptide, "min_interatomic": min_inter}
 
+def ensemble_contact(paths):
+    """Mean CDR3(Vbeta)-peptide contact across all Protenix samples of one construct.
+
+    Protenix emits several samples per seed whose docking pose varies a lot, so a
+    single sample is not representative; the ensemble mean is. Skips any model that
+    does not parse to a full 5-chain TCR-pMHC. Returns (mean|None, n_models, n_valid).
+    """
+    paths = list(paths)
+    vals = []
+    for p in paths:
+        v = score_model(p).get("cdr3_pep_atoms")
+        if v is not None:
+            vals.append(v)
+    if not vals:
+        return None, len(paths), 0
+    return float(np.mean(vals)), len(paths), len(vals)
+
+
 def score_model(cif_path) -> dict:
     chains = _heavy_by_chain(cif_path)
     if not {"A", "B", "C", "D", "E"}.issubset(chains):

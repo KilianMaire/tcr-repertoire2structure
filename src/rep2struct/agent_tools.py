@@ -130,7 +130,7 @@ def _fold_inputs(tool: str, job: dict, clonotype_id: str, clon=None, ann=None) -
     (it keeps only construct_fasta), so build_fold_notebook reads them back from the ingest and
     annotate stages and passes them here. Unwired tools embed the raw construct for their
     fail-loud scaffold."""
-    from .tools import mhcfine_inputs, affinetune_inputs, tcrdock_inputs
+    from .tools import mhcfine_inputs, affinetune_inputs, tcrdock_inputs, protenix_inputs
     if tool == "tcrdock":
         if clon is None or ann is None:
             raise ValueError(
@@ -139,6 +139,9 @@ def _fold_inputs(tool: str, job: dict, clonotype_id: str, clon=None, ann=None) -
         built = tcrdock_inputs.build(clon, ann)
         return {f"{clonotype_id}_{k}": v for k, v in built.items()}
     fasta = job["construct_fasta"]
+    if tool == "protenix":
+        built = protenix_inputs.build(fasta)
+        return {f"{clonotype_id}_{k}": v for k, v in built.items()}
     if tool == "mhcfine":
         built = mhcfine_inputs.build(fasta)
         return {f"{clonotype_id}_{k}": v for k, v in built.items()}
@@ -231,9 +234,25 @@ async def qc_structure(args):
         elif metric == "peptide_groove":
             res = verdict_groove(score_pose(chains), args["clonotype_id"], tool=tool)
         else:  # cdr3_peptide
-            s = score_model(paths[0])
-            s["clonotype_id"] = args["clonotype_id"]
-            res = verdict(s, args["scramble_threshold"])
+            from .qc import ensemble_contact
+            # Protenix emits several samples whose docking pose varies a lot, and it writes a
+            # cognate + scramble pair per clonotype ({cid}_cognate / {cid}_scramble in the path).
+            # Ensemble the CDR3-peptide contact over the cognate samples and calibrate it against
+            # this clonotype's OWN scramble ensemble (the per-clonotype null), never a global
+            # number. Fall back to the caller's explicit threshold + a single model only when the
+            # recorded paths carry no cognate/scramble split (legacy single-model records).
+            cognate = [p for p in paths if "_cognate" in Path(p).name]
+            scramble = [p for p in paths if "_scramble" in Path(p).name]
+            if cognate:
+                cog, _, _ = ensemble_contact(cognate)
+                scr, _, _ = ensemble_contact(scramble) if scramble else (None, 0, 0)
+                thr = scr if scr is not None else args["scramble_threshold"]
+                s = {"cdr3_pep_atoms": cog, "n_chains": 5, "clonotype_id": args["clonotype_id"]}
+            else:
+                s = score_model(paths[0])
+                s["clonotype_id"] = args["clonotype_id"]
+                thr = args["scramble_threshold"]
+            res = verdict(s, thr)
             res.tool = tool
             res.calibration_basis = "scramble_null"
     qcs = rs.read_stage("qc") if rs.stage_done("qc") else []
