@@ -38,7 +38,9 @@ For each TCR:
 1. Build cognate construct + `k` decoy constructs (decoys share the TCR's
    restricting HLA where possible, so we test peptide discrimination, not HLA
    geometry).
-2. Fold each with Protenix (headless, scriptable; see Risks), several samples.
+2. Fold each with Protenix via the existing user-driven Colab MSA notebook
+   (Claude builds/uploads the notebook, the user runs the cells and pastes
+   outputs), several samples.
 3. Score CDR3(Vbeta)-peptide heavy-atom contact, sample-averaged.
 4. Rank the epitopes by contact.
 
@@ -105,13 +107,12 @@ both tiers unless the seed motivates it).
 
 ## Key risks / open dependencies
 
-- **Protenix headless at scale (the main feasibility risk):** the current path is
-  Playwright-driven Colab, shown to be fragile (MSA server throttling wedged a
-  batch). The benchmark needs Protenix driven programmatically (CLI/API on a
-  rented or scripted-Colab A100). Confirming this drive path is the first
-  implementation task; if it cannot be made reliable, fall back to a smaller N
-  rather than switching engine (literature: AF3-class >= TCRdock for TCR-pMHC
-  class I).
+- **Fold throughput (resolved drive path):** folds run through the existing
+  user-driven Colab MSA notebook, not Playwright. Claude builds/fixes/uploads the
+  notebook and the user runs the cells and pastes outputs. The batch of 120-240
+  folds is fed through that same notebook; the remaining risk is Colab wall-time /
+  session limits, mitigated by chunking the batch and keeping N small for the seed
+  (literature: AF3-class >= TCRdock for TCR-pMHC class I, so no engine switch).
 - **Enough novel TCRs in one HLA:** the pilot must contain enough de-leaked novel
   clonotypes in the chosen HLA to make the headline claim; verify before folding.
 
