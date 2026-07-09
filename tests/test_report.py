@@ -117,6 +117,9 @@ def test_msa_basis_from_manifest():
          "C": {"got_msa": True}, "D": {"got_msa": False}}) == "colab_cpu:2/4"
     # nothing got an MSA -> honestly MSA-free
     assert msa_basis_from_manifest({"A": {"got_msa": False}, "B": {"got_msa": False}}) == "none"
+    # a stray manifest file that parses to a non-dict (list/scalar) must not crash the report
+    assert msa_basis_from_manifest(["A", "B"]) == "none"
+    assert msa_basis_from_manifest("oops") == "none"
 
 
 def test_msa_note_renders_manifest_basis():

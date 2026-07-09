@@ -18,7 +18,11 @@ EVIDENCE = {
 
 def msa_basis_from_manifest(manifest: dict) -> str:
     """Per-clonotype MSA manifest {chain_id: {"got_msa": bool}, ...} -> basis token.
-    "colab_cpu:k/n" when any chain got an MSA, else "none" (honestly MSA-free)."""
+    "colab_cpu:k/n" when any chain got an MSA, else "none" (honestly MSA-free).
+    A stray manifest that is not a dict (legacy or hand-edited) folds to "none"
+    rather than crashing the whole report render."""
+    if not isinstance(manifest, dict):
+        return "none"
     chains = [v for v in manifest.values() if isinstance(v, dict) and "got_msa" in v]
     n = len(chains)
     k = sum(1 for v in chains if v["got_msa"])
