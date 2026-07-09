@@ -190,3 +190,26 @@ def test_inputs_cell_is_executable_python_with_bool_and_none():
     ns: dict = {}
     exec("".join(cell["source"]), ns)          # must not raise
     assert ns["INPUTS"] == inputs              # round-trips with False and None intact
+
+
+def test_protenix_notebook_computes_pre_fold_msa():
+    # v1 MSA: a Colab-CPU cell computes one unpaired a3m per unique protein chain via ColabFold
+    # MMseqs2, injects it as unpairedMsaPath, BEFORE the fold. Peptides (len<20) get none, and a
+    # failed search folds that chain MSA-free (never fatal).
+    inputs = {
+        "c1_cognate": [{"name": "cognate", "sequences": [
+            {"proteinChain": {"sequence": "M" * 100, "count": 1, "id": ["C"]}},
+            {"proteinChain": {"sequence": "GILGFVFTL", "count": 1, "id": ["E"]}}],
+            "covalent_bonds": []}],
+        "c1_scramble": [{"name": "scramble", "sequences": [
+            {"proteinChain": {"sequence": "M" * 100, "count": 1, "id": ["C"]}},
+            {"proteinChain": {"sequence": "TFVFGLIGL", "count": 1, "id": ["E"]}}],
+            "covalent_bonds": []}],
+    }
+    src = "".join(s for cell in build_notebook("protenix", inputs)["cells"] for s in cell["source"])
+    for marker in ("pip install -q colabfold", "run_mmseqs2", "use_pairing=False",
+                   "/content/msa", "unpairedMsaPath", "len(s) >= 20", "_msa_manifest.json",
+                   "MSA_FAIL"):
+        assert marker in src, f"missing MSA marker: {marker}"
+    # the MSA cell must run BEFORE the write-inputs cell (the fold consumes the injected paths)
+    assert src.index("run_mmseqs2") < src.index("write each embedded record")
