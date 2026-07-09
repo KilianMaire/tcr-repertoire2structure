@@ -55,9 +55,16 @@ REGISTRY: list[StructureTool] = [
         validity={"mhc_class": {1, 2}, "needs_tcr": True, "species": "any"},
         output_type="structure",
         strengths="TCR:pMHC interface and V-domain anchoring",
-        limits="template-coverage limited; class II not systematically benchmarked",
+        limits="template-coverage limited; class II not systematically benchmarked. "
+               "Live-validated class I 2026-07-09: folds a docking structure (a single "
+               "merged chain, not A-E) but recognition is judged by the peptide<->TCR "
+               "interface PAE, which discriminated a cognate flu M1 TCR (pae ~11, peptide "
+               "pLDDT 86) from its scramble (pae ~21, pLDDT 65)",
         colab_adapter="tcrdock_colab",
-        qc_metric="cdr3_peptide",
+        # output_type stays "structure" (tcrdock IS the TCR:pMHC docking tool, must remain
+        # selectable for structure jobs), but the single-chain output cannot feed the
+        # cdr3_peptide chain-contact path, so QC scores the interface PAE via verdict_binding.
+        qc_metric="binding_score",
     ),
     StructureTool(
         name="affinetune",

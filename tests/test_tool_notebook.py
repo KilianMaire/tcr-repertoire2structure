@@ -3,7 +3,7 @@ from rep2struct.tools.notebook import build_notebook
 
 
 def test_notebook_is_valid_and_embeds_inputs():
-    nb = build_notebook("tcrdock", {"cognate": {"chains": {"E": "SII"}}})
+    nb = build_notebook("af3", {"cognate": {"chains": {"E": "SII"}}})  # af3 is still unwired
     assert nb["nbformat"] == 4
     json.dumps(nb)  # serializable
     src = "".join(src_ for cell in nb["cells"] for src_ in cell["source"])
@@ -12,9 +12,42 @@ def test_notebook_is_valid_and_embeds_inputs():
 
 
 def test_notebook_scaffold_fails_loud_not_fake():
-    nb = build_notebook("tcrdock", {})         # tcrdock is not yet wired
+    nb = build_notebook("af3", {})             # af3 is not yet wired
     src = "".join(s for cell in nb["cells"] for s in cell["source"])
     assert "NotImplementedError" in src        # unwired notebook cannot fake a result
+
+
+def test_tcrdock_notebook_is_wired_not_a_stub():
+    inputs = {"c_cognate": {"row": {"organism": "human", "mhc_class": 1, "mhc": "A*02:01",
+                                    "peptide": "GILGFVFTL", "va": "TRAV8-3*01", "ja": "TRAJ42*01",
+                                    "cdr3a": "CAVGARGGSQGNLIF", "vb": "TRBV19*01",
+                                    "jb": "TRBJ2-7*01", "cdr3b": "CASSTRAGVEQYF"}},
+              "c_scramble": {"row": {"organism": "human", "mhc_class": 1, "mhc": "A*02:01",
+                                     "peptide": "TFVFGLIGL", "va": "TRAV8-3*01", "ja": "TRAJ42*01",
+                                     "cdr3a": "CAVGARGGSQGNLIF", "vb": "TRBV19*01",
+                                     "jb": "TRBJ2-7*01", "cdr3b": "CASSTRAGVEQYF"}}}
+    nb = build_notebook("tcrdock", inputs)
+    json.dumps(nb)                                     # serializable
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "live cell not yet validated" not in src    # not the fail-loud stub scaffold
+    assert "TODO(live)" not in src
+    assert "GILGFVFTL" in src and "TFVFGLIGL" in src   # both records embedded
+    # the corrections that were required live to make TCRdock run:
+    for marker in ("setup_for_alphafold", "run_prediction", "model_2_ptm_pae_1_2",
+                   "v2.3.2", "jaxlib==0.3.25", "biopython==1.79", "cudatoolkit=11.1",
+                   "LD_LIBRARY_PATH"):
+        assert marker in src, f"missing recipe marker: {marker}"
+
+
+def test_tcrdock_inverts_pae_for_verdict_binding():
+    # interface PAE is LOWER = more recognized; verdict_binding treats HIGHER = more
+    # recognized. The adapter must write score = -pae, else the verdict is inverted.
+    inputs = {"k": {"row": {"organism": "human", "mhc_class": 1, "mhc": "A*02:01",
+                            "peptide": "GILGFVFTL", "va": "TRAV8-3*01", "ja": "TRAJ42*01",
+                            "cdr3a": "CAV", "vb": "TRBV19*01", "jb": "TRBJ2-7*01", "cdr3b": "CAS"}}}
+    nb = build_notebook("tcrdock", inputs)
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "score = -pae" in src
 
 
 def test_mhcfine_notebook_is_wired_not_a_stub():

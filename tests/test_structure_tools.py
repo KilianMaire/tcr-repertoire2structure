@@ -17,6 +17,17 @@ def test_affinetune_is_binding_score_the_rest_structure():
     assert by["protenix"].output_type == "structure"
 
 
+def test_tcrdock_output_type_stays_structure_despite_binding_qc():
+    # tcrdock's qc_metric became binding_score (single-chain output, scored by interface PAE),
+    # but its output_type MUST stay "structure": it is the TCR:pMHC docking tool and has to
+    # remain selectable for structure jobs. Flipping output_type would drop it from
+    # tools_for(output_needed="structure") and wrongly add it to binding_score coverage.
+    by = {t.name: t for t in st.REGISTRY}
+    assert by["tcrdock"].output_type == "structure"
+    assert "tcrdock" in {t.name for t in st.tools_for(1, True, "human", "structure")}
+    assert "tcrdock" not in {t.name for t in st.tools_for(1, True, "human", "binding_score")}
+
+
 def test_tools_for_class_ii_structure_returns_protenix_not_mhcfine():
     got = {t.name for t in st.tools_for(2, has_tcr=True, species="human", output_needed="structure")}
     assert "protenix" in got and "mhcfine" not in got  # mhcfine is class I only
@@ -39,7 +50,10 @@ def test_as_dicts_is_json_safe():
 
 def test_qc_metric_per_tool():
     by = {t.name: t.qc_metric for t in st.REGISTRY}
-    assert by == {"protenix": "cdr3_peptide", "tcrdock": "cdr3_peptide",
+    # tcrdock folds a structure but its single-chain output is scored by the peptide<->TCR
+    # interface PAE via verdict_binding, so its qc_metric is binding_score (its output_type
+    # stays "structure" so it remains selectable for structure jobs; see the registry note).
+    assert by == {"protenix": "cdr3_peptide", "tcrdock": "binding_score",
                   "mhcfine": "peptide_groove", "affinetune": "binding_score",
                   "af3": "cdr3_peptide"}
 

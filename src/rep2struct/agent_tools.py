@@ -103,12 +103,23 @@ async def list_structure_tools(args):
     return r
 
 
-def _fold_inputs(tool: str, job: dict, clonotype_id: str) -> dict:
-    """Shape a fold job's construct into the tool's Colab inputs. mhcfine and affinetune
-    each take a cognate + scramble pair (keys prefixed by clonotype id so per-clonotype
+def _fold_inputs(tool: str, job: dict, clonotype_id: str, clon=None, ann=None) -> dict:
+    """Shape a fold job's construct into the tool's Colab inputs. mhcfine, affinetune and
+    tcrdock each take a cognate + scramble pair (keys prefixed by clonotype id so per-clonotype
     output files never collide): mhcfine gets MHC heavy + peptide, affinetune gets
-    {mhc, b2m, peptide}. Unwired tools embed the raw construct for their fail-loud scaffold."""
-    from .tools import mhcfine_inputs, affinetune_inputs
+    {mhc, b2m, peptide}, tcrdock gets the gene-level TSV row. tcrdock is built from the
+    Clonotype+Annotation (gene names + CDR3 + peptide + HLA), which the FoldJob does NOT carry
+    (it keeps only construct_fasta), so build_fold_notebook reads them back from the ingest and
+    annotate stages and passes them here. Unwired tools embed the raw construct for their
+    fail-loud scaffold."""
+    from .tools import mhcfine_inputs, affinetune_inputs, tcrdock_inputs
+    if tool == "tcrdock":
+        if clon is None or ann is None:
+            raise ValueError(
+                f"tcrdock needs the clonotype and annotation (gene-level fields) for "
+                f"{clonotype_id}; not found in the ingest/annotate stages")
+        built = tcrdock_inputs.build(clon, ann)
+        return {f"{clonotype_id}_{k}": v for k, v in built.items()}
     fasta = job["construct_fasta"]
     if tool == "mhcfine":
         built = mhcfine_inputs.build(fasta)
@@ -132,7 +143,15 @@ async def build_fold_notebook(args):
     if job is None:
         return _txt(f"no fold job for {cid}")
     tool = args["tool"]
-    nb = build_notebook(tool, _fold_inputs(tool, job, cid))
+    # tcrdock needs the gene-level Clonotype+Annotation, which the FoldJob does not carry;
+    # read them back from the persisted ingest/annotate stages (tcr_explorer already enriched
+    # them upstream, so nothing is re-derived here).
+    clon = ann = None
+    if tool == "tcrdock":
+        clon = next((c for c in _load(args["run_dir"], "ingest", Clonotype) if c.id == cid), None)
+        ann = next((a for a in _load(args["run_dir"], "annotate", Annotation)
+                    if a.clonotype_id == cid), None)
+    nb = build_notebook(tool, _fold_inputs(tool, job, cid, clon, ann))
     nb_dir = Path(args["run_dir"]) / "notebooks"
     nb_dir.mkdir(parents=True, exist_ok=True)
     out = nb_dir / f"{cid}_{tool}.ipynb"

@@ -182,8 +182,116 @@ def _affinetune_notebook(inputs: dict) -> dict:
     }
 
 
+def _tcrdock_notebook(inputs: dict) -> dict:
+    """Validated TCRdock (phbradley/TCRdock) adapter (calibrated live 2026-07-09 on Colab
+    A100: cognate GILGFVFTL peptide<->TCR pae ~11.2 vs scramble TFVFGLIGL ~20.8, peptide
+    pLDDT 86 vs 65).
+
+    INPUTS is {key: {row: {10-col tcrdock target}}} (cognate + scramble, keys prefixed by
+    clonotype id). TCRdock builds the TCR:pMHC from gene names + CDR3 loops via its own
+    templates, so a row is organism/mhc_class/mhc/peptide/va/ja/cdr3a/vb/jb/cdr3b, NOT chain
+    sequences. TCRdock returns a structure, but recognition is judged by the peptide<->TCR
+    interface PAE, so each record also yields a one-float score file that qc reads via
+    verdict_binding (qc_metric=binding_score for tcrdock).
+
+    Env lesson (the whole point; TCRdock declares almost none of it): same side conda py3.8 +
+    shell-out pattern as affinetune. TCRdock's requirements.txt is only biopython/numpy/pandas/
+    scipy/matplotlib; the ENTIRE AlphaFold stack is deferred to "the AlphaFold README". Its
+    bundled AF fork is the 2.3.x line (it annotates jax.Array), so affinetune's AF-2.0 stack is
+    the WRONG one. Install DeepMind's AlphaFold v2.3.2 python stack (tensorflow-cpu 2.11, dm-haiku
+    0.0.9, numpy 1.21.6, biopython 1.79) + jaxlib 0.3.25 for CUDA 11 / cuDNN 8.05 (matches
+    cudatoolkit=11.1). biopython 1.79 is required: TCRdock imports Bio.SubsMat, removed in >=1.80.
+    Every shell-out sets LD_LIBRARY_PATH=/opt/conda/envs/tcrdock/lib:/usr/lib64-nvidia.
+
+    Output facts, confirmed live: the PDB is a SINGLE merged chain (MHC groove + peptide + Valpha
+    + Vbeta), not A..E. The block layout is recoverable from target_chainseq in {key}_final.tsv,
+    four '/'-joined segments in order 0=MHC, 1=peptide, 2=TCRalpha, 3=TCRbeta. The score is the
+    peptide<->TCR interface PAE = mean(model_2_ptm_pae_1_2, model_2_ptm_pae_1_3) over the best
+    (lowest overall model_2_ptm_pae) row; LOWER pae = more recognized, so the reader INVERTS
+    (score = -pae) before verdict_binding, which treats HIGHER as more recognized."""
+    return {
+        "nbformat": 4, "nbformat_minor": 5, "metadata": {"accelerator": "GPU"},
+        "cells": [
+            _code("# tcrdock inputs (embedded): {key: {row: {10-col tcrdock target}}}\n",
+                  "INPUTS = ", repr(inputs)),
+            _code("# 1. side conda py3.8 env + TCRdock + its FULL AF stack. TCRdock's requirements.txt\n",
+                  "#    omits AlphaFold entirely; its fork is the AF 2.3.x line (uses jax.Array), so\n",
+                  "#    install DeepMind's AF v2.3.2 stack + jaxlib cuda111. biopython==1.79 is required\n",
+                  "#    (TCRdock imports Bio.SubsMat, gone in >=1.80). cudatoolkit=11.1 for the CUDA 11 runtime.\n",
+                  "import os, subprocess\n",
+                  "def sh(c):\n",
+                  "    print('>>>', c, flush=True); subprocess.run(c, shell=True, check=True)\n",
+                  "if not os.path.isdir('/opt/conda'):\n",
+                  "    sh('wget -qO /tmp/mf.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh && bash /tmp/mf.sh -b -p /opt/conda')\n",
+                  "if not os.path.isdir('/opt/conda/envs/tcrdock'):\n",
+                  "    sh('/opt/conda/bin/mamba create -y -n tcrdock python=3.8')\n",
+                  "if not os.path.isdir('/content/TCRdock'):\n",
+                  "    sh('git clone https://github.com/phbradley/TCRdock /content/TCRdock')\n",
+                  "PIP = '/opt/conda/envs/tcrdock/bin/pip'\n",
+                  "sh(PIP + ' install -q -r /content/TCRdock/requirements.txt')\n",
+                  "sh('cd /content/TCRdock && /opt/conda/envs/tcrdock/bin/python download_blast.py')\n",
+                  "sh('/opt/conda/bin/mamba install -y -n tcrdock -c conda-forge cudatoolkit=11.1 cudnn')\n",
+                  "sh('wget -qO /content/af232.txt https://raw.githubusercontent.com/google-deepmind/alphafold/v2.3.2/requirements.txt')\n",
+                  "sh(PIP + ' install -q -r /content/af232.txt')\n",
+                  "sh(PIP + ' install -q jax==0.3.25 jaxlib==0.3.25+cuda11.cudnn805 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html')\n",
+                  "print('ENV_COMPLETE', flush=True)\n"),
+            _code("# 2. base AF params (model_2_ptm) into {data_dir}/params/ (same dropbox file affinetune uses)\n",
+                  "import os, subprocess\n",
+                  "os.makedirs('/content/alphafold_params/params', exist_ok=True)\n",
+                  "p = '/content/alphafold_params/params/params_model_2_ptm.npz'\n",
+                  "if not os.path.exists(p):\n",
+                  "    subprocess.run('wget -qO ' + p + ' https://www.dropbox.com/s/e3uz9mwxkmmv35z/params_model_2_ptm.npz', shell=True, check=True)\n",
+                  "print('PARAMS_OK', os.path.getsize(p), flush=True)\n"),
+            _code("# 3. fold each record: write the 10-col targets.tsv, setup_for_alphafold, run_prediction,\n",
+                  "#    then read the peptide<->TCR interface PAE from {key}_final.tsv and INVERT it (lower pae\n",
+                  "#    = more recognized; verdict_binding wants higher). blocks: 0=MHC 1=peptide 2=TCRa 3=TCRb.\n",
+                  "import os, subprocess, json\n",
+                  "TD, PY = '/content/TCRdock', '/opt/conda/envs/tcrdock/bin/python'\n",
+                  "env = dict(os.environ, LD_LIBRARY_PATH='/opt/conda/envs/tcrdock/lib:/usr/lib64-nvidia')\n",
+                  "COLS = ['organism','mhc_class','mhc','peptide','va','ja','cdr3a','vb','jb','cdr3b']\n",
+                  "os.makedirs('/content/output', exist_ok=True)\n",
+                  "def iface_pae(final_tsv):\n",
+                  "    # peptide<->TCR interface PAE = mean(pae_1_2, pae_1_3) over the best (lowest overall pae) row\n",
+                  "    lines = open(final_tsv).read().rstrip().split('\\n')\n",
+                  "    hdr = lines[0].split('\\t'); idx = {h: i for i, h in enumerate(hdr)}\n",
+                  "    best = None\n",
+                  "    for ln in lines[1:]:\n",
+                  "        f = ln.split('\\t')\n",
+                  "        overall = float(f[idx['model_2_ptm_pae']])\n",
+                  "        pae = (float(f[idx['model_2_ptm_pae_1_2']]) + float(f[idx['model_2_ptm_pae_1_3']])) / 2\n",
+                  "        if best is None or overall < best[0]:\n",
+                  "            best = (overall, pae)\n",
+                  "    return best[1]\n",
+                  "scores = {}\n",
+                  "for key, rec in INPUTS.items():\n",
+                  "    row = rec['row']\n",
+                  "    tf = f'{key}_targets.tsv'\n",
+                  "    with open(f'{TD}/{tf}', 'w') as f:\n",
+                  "        f.write('\\t'.join(COLS) + '\\n')\n",
+                  "        f.write('\\t'.join(str(row[c]) for c in COLS) + '\\n')\n",
+                  "    s = subprocess.run(f'{PY} setup_for_alphafold.py --targets_tsvfile {tf} --output_dir setup_{key}',\n",
+                  "                       shell=True, cwd=TD, capture_output=True, text=True, env=env)\n",
+                  "    assert s.returncode == 0, s.stderr[-3000:]\n",
+                  "    r = subprocess.run(f'{PY} run_prediction.py --targets setup_{key}/targets.tsv'\n",
+                  "                       f' --outfile_prefix {key} --model_names model_2_ptm'\n",
+                  "                       ' --data_dir /content/alphafold_params/',\n",
+                  "                       shell=True, cwd=TD, capture_output=True, text=True, env=env)\n",
+                  "    assert r.returncode == 0, r.stderr[-3000:]\n",
+                  "    pae = iface_pae(f'{TD}/{key}_final.tsv')\n",
+                  "    score = -pae\n",
+                  "    sp = f'/content/output/{key}.score'\n",
+                  "    open(sp, 'w').write(f'{score:.6f}')\n",
+                  "    scores[key] = {'iface_pae': pae, 'score': score, 'score_path': sp}\n",
+                  "    print('SCORED', key, 'iface_pae', round(pae, 3), '-> score', round(score, 3), flush=True)\n",
+                  "json.dump(scores, open('/content/tcrdock_result.json', 'w'), indent=2)\n",
+                  "print('DONE', len(scores))\n"),
+        ],
+    }
+
+
 # Tools whose live Colab cell has been validated and wired to a real recipe.
-_WIRED = {"mhcfine": _mhcfine_notebook, "affinetune": _affinetune_notebook}
+_WIRED = {"mhcfine": _mhcfine_notebook, "affinetune": _affinetune_notebook,
+          "tcrdock": _tcrdock_notebook}
 
 
 def build_notebook(tool: str, inputs: dict) -> dict:
