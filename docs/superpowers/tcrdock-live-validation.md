@@ -51,6 +51,20 @@ Raised by adversarial review of the builder; each needs a real tcrdock run to se
    short or homopolymer like peptides the reverse+rotate can equal the original,
    weakening the calibration null. Backlog; verify the real peptides are not degenerate.
 
+## Live run 1 (2026-07-08, Colab CoquetLab, T4 15GB)
+
+Drive proven end-to-end: login (CoquetLab) -> upload ipynb -> GPU runtime -> run cell
+-> read output, all via Playwright. Cell 1 OK (Tesla T4, TCRdock cloned). Cell 2:
+`download_blast.py` OK (ncbi-blast 2.11.0), but `pip install -r requirements.txt`
+FAILED with `ModuleNotFoundError: No module named 'setuptools.extern.six'`.
+
+Root cause: Colab is Python 3.12 + modern setuptools; tcrdock's requirements target
+py3.8 and pin old packages whose setup.py imports `setuptools.extern.six` (gone in
+setuptools >= 58). Even past that, tcrdock's bundled AF2/JAX fork is built for py3.8;
+its jaxlib will not match py3.12 + CUDA 12. Conclusion: tcrdock needs a real py3.8/3.9
+environment on Colab (condacolab), not a one-line patch. The notebook builder is at
+`scripts/build_tcrdock_notebook.py`; env bring-up is the open task before a fold runs.
+
 ## Step 3: Playwright drive
 
 Validate the executor (`tcrdock-agent`) opens the notebook, runs all cells, waits,

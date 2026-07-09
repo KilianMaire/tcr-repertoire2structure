@@ -48,6 +48,36 @@ def test_mhcfine_shim_precedes_import_so_no_restart():
     assert src.index("kalign") < src.index("from src import")
 
 
+def test_affinetune_notebook_is_wired_not_a_stub():
+    inputs = {"c_cognate": {"mhc": "GSHSMRYFF" * 25, "b2m": "IQRTPKIQV", "peptide": "GILGFVFTL"},
+              "c_scramble": {"mhc": "GSHSMRYFF" * 25, "b2m": "IQRTPKIQV", "peptide": "TFVFGLIGL"}}
+    nb = build_notebook("affinetune", inputs)
+    json.dumps(nb)                                     # serializable
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "live cell not yet validated" not in src    # not the fail-loud stub scaffold
+    assert "TODO(live)" not in src
+    assert "GILGFVFTL" in src and "TFVFGLIGL" in src   # both records embedded
+    for marker in ("run_prediction", "model_2_ptm_ft_pae", "--ignore_identities",
+                   "cudatoolkit=11.1", "LD_LIBRARY_PATH", "[:175]"):
+        assert marker in src, f"missing recipe marker: {marker}"
+
+
+def test_affinetune_inverts_pae_for_verdict_binding():
+    # run_prediction pae is LOWER = presented; verdict_binding treats HIGHER = presented.
+    # The adapter must write score = -pae, else the verdict is inverted. Lock the direction.
+    nb = build_notebook("affinetune", {"k": {"mhc": "M" * 200, "b2m": "B", "peptide": "GILGFVFTL"}})
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "score = -pae" in src
+
+
+def test_affinetune_ninemer_only_is_fail_loud():
+    # Only 9-mers are calibrated; a non-9-mer must raise, not silently fold against a
+    # length-mismatched template. The guard lives in the embedded loop.
+    nb = build_notebook("affinetune", {"k": {"mhc": "M" * 200, "b2m": "B", "peptide": "SIINFEKL"}})
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "NotImplementedError" in src and "only 9-mers wired" in src
+
+
 def test_inputs_cell_is_executable_python_with_bool_and_none():
     # JSON literals (false/null/true) are NOT valid Python; the INPUTS cell must
     # embed a Python literal so it executes in Jupyter/Colab without NameError.

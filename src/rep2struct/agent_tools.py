@@ -104,13 +104,17 @@ async def list_structure_tools(args):
 
 
 def _fold_inputs(tool: str, job: dict, clonotype_id: str) -> dict:
-    """Shape a fold job's construct into the tool's Colab inputs. mhcfine takes the MHC
-    heavy chain + peptide (keys prefixed by clonotype id so per-clonotype output files
-    never collide). Unwired tools embed the raw construct for their fail-loud scaffold."""
-    from .tools import mhcfine_inputs
+    """Shape a fold job's construct into the tool's Colab inputs. mhcfine and affinetune
+    each take a cognate + scramble pair (keys prefixed by clonotype id so per-clonotype
+    output files never collide): mhcfine gets MHC heavy + peptide, affinetune gets
+    {mhc, b2m, peptide}. Unwired tools embed the raw construct for their fail-loud scaffold."""
+    from .tools import mhcfine_inputs, affinetune_inputs
     fasta = job["construct_fasta"]
     if tool == "mhcfine":
         built = mhcfine_inputs.build(fasta)
+        return {f"{clonotype_id}_{k}": v for k, v in built.items()}
+    if tool == "affinetune":
+        built = affinetune_inputs.build(fasta)
         return {f"{clonotype_id}_{k}": v for k, v in built.items()}
     return {"construct_fasta": fasta}
 

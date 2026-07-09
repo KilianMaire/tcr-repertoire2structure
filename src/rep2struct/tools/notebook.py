@@ -97,8 +97,93 @@ def _mhcfine_notebook(inputs: dict) -> dict:
     }
 
 
+def _affinetune_notebook(inputs: dict) -> dict:
+    """Validated affinetune (phbradley/alphafold_finetune) adapter (calibrated live
+    2026-07-09 on Colab T4: cognate GILGFVFTL pae 1.02 vs scramble TFVFGLIGL pae 2.25).
+
+    INPUTS is {key: {mhc, b2m, peptide}} (cognate + scramble, keys prefixed by clonotype
+    id). affinetune returns a PRESENTATION score, not a structure, so each record yields a
+    one-float score file that qc reads via verdict_binding.
+
+    Env lesson (shared with tcrdock): the JAX/AF wheels are cp38, uninstallable in Colab's
+    py3.12 kernel. The recipe builds a side conda py3.8 env and SHELLS OUT to it (no kernel
+    restart). Two CUDA gotchas: install cudatoolkit=11.1 + cudnn into the env (jaxlib-cuda111
+    ships without the CUDA 11 runtime, else run_prediction aborts on libcudart.so.11.0), and
+    every shell-out MUST set LD_LIBRARY_PATH=/opt/conda/envs/af/lib:/usr/lib64-nvidia (prepend,
+    keep the driver dir, else cuInit 303 -> silent CPU fallback).
+
+    Two model facts, both confirmed live: the score column is model_2_ptm_ft_pae and LOWER =
+    presented, so the reader INVERTS (score = -pae) before verdict_binding, which treats
+    HIGHER as more presented. And the pMHC target_chainseq is the alpha1+alpha2 groove domain
+    (~175 aa) + peptide, no b2m. Chain C from the construct is the full alpha1-2-3 ectodomain,
+    so the adapter takes its first 175 residues (the real allele's own groove) and threads it
+    onto a shipped class I template via the length-matched alignment file with
+    --ignore_identities. run_prediction asserts target_len == len(query), the fail-loud net if
+    a peptide length has no wired alignment (only 9-mers are calibrated)."""
+    return {
+        "nbformat": 4, "nbformat_minor": 5, "metadata": {"accelerator": "GPU"},
+        "cells": [
+            _code("# affinetune inputs (embedded): {key: {mhc, b2m, peptide}}\n",
+                  "INPUTS = ", repr(inputs)),
+            _code("# 1. side conda py3.8 env + alphafold_finetune + its cp38 wheels (no kernel restart).\n",
+                  "#    cudatoolkit=11.1 is THE fix: jaxlib-cuda111 ships without the CUDA 11 runtime.\n",
+                  "import os, subprocess\n",
+                  "def sh(c):\n",
+                  "    print('>>>', c, flush=True); subprocess.run(c, shell=True, check=True)\n",
+                  "if not os.path.isdir('/opt/conda'):\n",
+                  "    sh('wget -qO /tmp/mf.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh && bash /tmp/mf.sh -b -p /opt/conda')\n",
+                  "if not os.path.isdir('/opt/conda/envs/af'):\n",
+                  "    sh('/opt/conda/bin/mamba create -y -n af python=3.8')\n",
+                  "if not os.path.isdir('/content/aff'):\n",
+                  "    sh('git clone --branch main https://github.com/phbradley/alphafold_finetune /content/aff')\n",
+                  "sh('/opt/conda/envs/af/bin/pip install -q -r /content/aff/requirements_colab_python38_v2.txt')\n",
+                  "sh('/opt/conda/bin/mamba install -y -n af -c conda-forge cudatoolkit=11.1 cudnn')\n"),
+            _code("# 2. base AF params (model_2_ptm) + the fine-tune dataset bundle (params pkl + alignments)\n",
+                  "import os, subprocess\n",
+                  "os.makedirs('/content/alphafold_params/params', exist_ok=True)\n",
+                  "if not os.path.exists('/content/alphafold_params/params/params_model_2_ptm.npz'):\n",
+                  "    subprocess.run('wget -qO /content/alphafold_params/params/params_model_2_ptm.npz https://www.dropbox.com/s/e3uz9mwxkmmv35z/params_model_2_ptm.npz', shell=True, check=True)\n",
+                  "if not os.path.isdir('/content/aff/datasets_alphafold_finetune'):\n",
+                  "    subprocess.run('cd /content/aff && wget -q https://files.ipd.uw.edu/pub/alphafold_finetune_motmaen_pnas_2023/datasets_alphafold_finetune_v2_2023-02-20.tgz && tar -xzf datasets_alphafold_finetune_v2_2023-02-20.tgz', shell=True, check=True)\n"),
+            _code("# 3. score each record: groove alpha (mhc[:175]) + peptide, length-matched shipped\n",
+                  "#    alignment, --ignore_identities. Read model_2_ptm_ft_pae and INVERT (lower pae =\n",
+                  "#    presented; verdict_binding wants higher = presented). Write one float per key.\n",
+                  "import os, subprocess, json, pandas as pd\n",
+                  "AFF, PY = '/content/aff', '/opt/conda/envs/af/bin/python'\n",
+                  "env = dict(os.environ, LD_LIBRARY_PATH='/opt/conda/envs/af/lib:/usr/lib64-nvidia')\n",
+                  "# shipped 9-mer class I alignment (target_len 184 = 175-aa alpha + 9-mer); calibrated live\n",
+                  "ALIGN = {9: 'examples/tiny_pmhc_finetune/alignments/A0203_alignments.tsv'}\n",
+                  "os.makedirs('/content/output', exist_ok=True)\n",
+                  "scores = {}\n",
+                  "for key, rec in INPUTS.items():\n",
+                  "    pep = rec['peptide']; L = len(pep)\n",
+                  "    if L not in ALIGN:\n",
+                  "        raise NotImplementedError(f'no calibrated affinetune alignment for a {L}-mer (only 9-mers wired)')\n",
+                  "    alpha = rec['mhc'][:175]   # alpha1+alpha2 groove domain of the real allele ectodomain\n",
+                  "    tsv = f'{key}_targets.tsv'\n",
+                  "    with open(f'{AFF}/{tsv}', 'w') as f:\n",
+                  "        f.write('mhc\\tstart\\tpeptide\\ttargetid\\ttarget_chainseq\\ttemplates_alignfile\\n')\n",
+                  "        f.write(f'na\\t0\\t{pep}\\t{key}\\t{alpha}/{pep}\\t{ALIGN[L]}\\n')\n",
+                  "    cmd = (PY + f' run_prediction.py --targets {tsv} --outfile_prefix {key}'\n",
+                  "           ' --model_names model_2_ptm_ft'\n",
+                  "           ' --model_params_files datasets_alphafold_finetune/params/mixed_mhc_pae_run6_af_mhc_params_20640.pkl'\n",
+                  "           ' --data_dir /content/alphafold_params/ --ignore_identities')\n",
+                  "    r = subprocess.run(cmd, shell=True, cwd=AFF, capture_output=True, text=True, env=env)\n",
+                  "    assert r.returncode == 0, r.stderr[-2000:]\n",
+                  "    pae = float(pd.read_csv(f'{AFF}/{key}_final.tsv', sep='\\t')['model_2_ptm_ft_pae'].iloc[0])\n",
+                  "    score = -pae\n",
+                  "    sp = f'/content/output/{key}.score'\n",
+                  "    open(sp, 'w').write(f'{score:.6f}')\n",
+                  "    scores[key] = {'pae': pae, 'score': score, 'score_path': sp}\n",
+                  "    print('SCORED', key, 'pae', round(pae, 3), '-> score', round(score, 3), flush=True)\n",
+                  "json.dump(scores, open('/content/affinetune_result.json', 'w'), indent=2)\n",
+                  "print('DONE', len(scores))\n"),
+        ],
+    }
+
+
 # Tools whose live Colab cell has been validated and wired to a real recipe.
-_WIRED = {"mhcfine": _mhcfine_notebook}
+_WIRED = {"mhcfine": _mhcfine_notebook, "affinetune": _affinetune_notebook}
 
 
 def build_notebook(tool: str, inputs: dict) -> dict:
