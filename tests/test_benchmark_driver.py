@@ -14,6 +14,15 @@ def test_select_seed_novel_first():
     sel = drv.select_seed_tcrs(clonos, truth, anns, "HLA-A*02:01", n=2)
     assert sel[0] == "a"
 
+def test_select_unannotatable_only_excludes_annotatable():
+    clonos = [Clonotype("a","TRAV1","CAA","TRBV1","CBB",2),
+              Clonotype("b","TRAV1","CAC","TRBV1","CBD",9)]
+    truth = {"a": ("GILGFVFTL","HLA-A*02:01"), "b": ("GILGFVFTL","HLA-A*02:01")}
+    anns = [Annotation("a", False, "unannotatable", tcrdist=None),
+            Annotation("b", True, "low", tcrdist=18.0)]
+    sel = drv.select_seed_tcrs(clonos, truth, anns, "HLA-A*02:01", n=2, unannotatable_only=True)
+    assert sel == ["a"]
+
 def test_emit_manifest_writes_constructs(tmp_path):
     clonos = [Clonotype("a","TRAV1","CAA","TRBV1","CBB",2)]
     truth = {"a": ("GILGFVFTL","HLA-A*02:01")}
