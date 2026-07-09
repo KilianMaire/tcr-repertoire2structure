@@ -95,6 +95,40 @@ cell's traceback). To read a real result, DO NOT trust streamed stdout; either c
 on-disk file, or make the cell's LAST EXPRESSION a DataFrame (`pd.read_csv(out, sep='\t')`)
 so Colab renders it as a table in the MAIN document, which the snapshot can read.
 
+## Calibration fold (VALIDATED live 2026-07-09 on Colab T4)
+
+A real cognate + scramble prediction on the class I seed peptide, run end to end
+through the rebuilt env. Cognate `GILGFVFTL` (flu M1, A*02:01) vs its deterministic
+scramble `TFVFGLIGL` (the pipeline null from `construct_io.scramble_peptide`). Both
+targets use the true A*02:01 alpha (175 aa, from the polg example), a b2m-free
+chainseq (`alpha/peptide`), and the shipped 9-mer alignment file
+`examples/tiny_pmhc_finetune/alignments/A0203_alignments.tsv` with `--ignore_identities`.
+Output `cal_final.tsv`, column `model_2_ptm_ft_pae`:
+
+| target | model_2_ptm_ft_pae | peptide pLDDT | pae_1_0 (pep to MHC) |
+| --- | --- | --- | --- |
+| cognate GILGFVFTL | 1.017 | 91.2 | 4.50 |
+| scramble TFVFGLIGL | 2.252 | 36.9 | 24.10 |
+
+Reads live (confirms all three open unknowns):
+1. Score column IS `model_2_ptm_ft_pae` and LOWER = presented. Cognate 1.02 beats
+   scramble 2.25 (2.2x). Two independent structural corroborations: the peptide
+   pLDDT collapses (91.2 to 36.9) and the peptide-to-MHC pae blows up (4.50 to
+   24.10) for the scramble. The adapter must invert (score = -pae) before it feeds
+   `verdict_binding`, which treats HIGHER as more presented.
+2. b2m-free chainseq (alpha + peptide only) folds correctly.
+3. templates_alignfile for a 9-mer: RESOLVED. The `tiny_pmhc_finetune` bundle ships
+   per-allele 9-mer alignment files (`target_len` 184 = 175-aa alpha + 9-mer), each
+   with its own committed template PDBs. Reuse the closest A2-family file
+   (`A0203_alignments.tsv`) with the true A*02:01 alpha; `run_prediction.py:124`
+   asserts only `target_len == len(query)` (a LENGTH check), and `--ignore_identities`
+   neutralizes the donor-allele mismatch. No alignment is hand-faked.
+
+Calibration threshold: cognate pae 1.02 clears the scramble null 2.25 with a
+1.24-unit margin. The affinetune `scramble_threshold` (a binding_score null) is set
+from this pair, on the inverted score. Distinct from the Protenix/tcrdock/mhcfine
+thresholds; never shared.
+
 ## Open unknowns to resolve on the first real run (do NOT guess-fix in the builder)
 
 1. Output score column + DIRECTION. RESOLVED from run_prediction.py source (lines 162-193):
@@ -104,16 +138,18 @@ so Colab renders it as a table in the MAIN document, which the snapshot can read
    IS the PAE and LOWER = more likely presented (the bundled BinderClassifier has slope
    -7.9, so higher pae -> lower binding probability). So the result reader must read
    `*_final.tsv`, take `<model>_pae`, and INVERT it (e.g. score = -pae) before it feeds
-   `verdict_binding`, which treats HIGHER as more presented. Still to capture live: an actual
-   cognate-vs-scramble pae pair (the numeric read was blocked this session by the output-
-   iframe caveat above, not by the env; the env runs).
+   `verdict_binding`, which treats HIGHER as more presented. CAPTURED live 2026-07-09:
+   cognate pae 1.02 vs scramble pae 2.25 (see the Calibration fold section above).
 2. b2m in the chainseq. The A*02:01 example row is MHC-alpha/peptide with no b2m. Confirm
    the pMHC model wants alpha only; if so the notebook assembles chainseq from `mhc` +
    `peptide` and ignores `b2m`.
-3. templates_alignfile for arbitrary allele/peptide length. The repo ships a prebuilt
-   A*02:01 10-mer alignment; 9-mers, other alleles (A*03:01 for KLGGALQAK), and class II
-   need their own alignment file. Find alphafold_finetune's alignment-generation helper
-   before running anything outside A*02:01 10-mers; do not hand-fake an alignment.
+3. templates_alignfile for arbitrary allele/peptide length. RESOLVED for A*02:01 9-mers
+   (see the Calibration fold section: reuse the `tiny_pmhc_finetune` 9-mer alignment
+   files, `target_len` 184). Still open for other lengths/alleles (A*03:01 for
+   KLGGALQAK, class II): pick the shipped file whose `target_len` matches the query
+   length and whose donor allele is closest, with `--ignore_identities`; the bundle
+   ships class I files A02xx/A03xx/A11xx/A23xx/A24xx/A26xx/A29xx/A30xx/A31xx/A33xx/A68xx
+   and B-alleles, plus DRB/DPB class II template files. Do not hand-fake an alignment.
 4. Scramble degeneracy (pre-existing, `construct_io.scramble_peptide`): verify the real
    peptides are not homopolymer-like so the scramble null is a genuine non-binder.
 
