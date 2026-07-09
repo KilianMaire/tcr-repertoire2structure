@@ -814,4 +814,385 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Type consistency:** `truth` is `dict[id -> (epitope, hla)]` throughout; `tcrdist` read via `getattr(a, "tcrdist", None)` consistently; `contact_by_epitope`/`plddt_by_epitope`/`retrieval_result`/`auroc`/`bootstrap_ci`/`permutation_p` signatures match between definition and callers in `evaluate`/`score_manifest`. ✓
 
-**Known follow-ups (preprint, out of seed scope):** true CDR3-residue pLDDT (Task 4 uses peptide-chain proxy); multi-HLA and multi-donor; contact+pLDDT combined ranker. Flagged, not silently dropped.
+**Known follow-ups (preprint, out of seed scope):** multi-HLA and multi-donor; contact+pLDDT combined ranker; cross-reactivity screening of decoys; epitope-matched strata. Flagged, not silently dropped.
+
+---
+
+## Adversarial-review revisions (BINDING — supersede the tasks above where they conflict)
+
+Two adversarial reviews (science + implementation) ran on the plan. The changes below are mandatory and contain complete code. Where a revision changes a function defined above, use the version here.
+
+### R0. Global additions
+
+- Constructs per TCR are now **cognate + k same-HLA decoys + 1 scramble** (a seeded composition-preserving shuffle of the cognate). The scramble enables the within-pair contrast.
+- The null for retrieval is the **empirical TCR-blind predictor** (rank by per-peptide mean contact), tested with a **label-permutation** test — NOT `1/(k+1)` alone.
+- `retrieval_result` must treat a `None` cognate as a non-call (not a win) and a tie as a non-win.
+- B2 baseline is **true CDR3β-residue pLDDT**, not peptide-chain pLDDT.
+- Freeze the raw contact metric definition, but the *headline* is decided only after the TCR-blind and scramble controls; do not read Top-1 vs `1/(k+1)` as the result.
+
+### R1. Task 2 revision — same-HLA-only decoys + scramble builder (replaces `decoys_for`, adds `scramble_peptide`)
+
+```python
+# src/rep2struct/benchmark.py  (replace decoys_for; add scramble_peptide)
+import random as _random
+
+def decoys_for(cognate, hla, panel, k):
+    # same-HLA ONLY: cross-HLA decoys reintroduce the HLA-geometry confound (review M1)
+    same = sorted(ep for (ep, h) in panel if h == hla and ep != cognate)
+    return same[:k]
+
+def scramble_peptide(cognate, seed=0):
+    # composition-preserving shuffle; deterministic; retry so it differs from cognate
+    chars = list(cognate)
+    rng = _random.Random(f"{cognate}:{seed}")
+    for _ in range(20):
+        rng.shuffle(chars)
+        s = "".join(chars)
+        if s != cognate:
+            return s
+    return "".join(chars)
+```
+
+Add tests:
+
+```python
+# tests/test_benchmark.py
+def test_decoys_same_hla_only_no_cross_fill():
+    panel = [("GILGFVFTL","HLA-A*02:01"), ("KLGGALQAK","HLA-A*03:01")]
+    assert bm.decoys_for("GILGFVFTL", "HLA-A*02:01", panel, k=3) == []  # no cross-HLA
+
+def test_scramble_preserves_composition_and_differs():
+    s = bm.scramble_peptide("GILGFVFTL", seed=1)
+    assert sorted(s) == sorted("GILGFVFTL") and s != "GILGFVFTL"
+```
+
+Update `test_decoys_same_hla_first` expectation: with the cross-HLA fill removed, `test_decoys_fill_from_other_hla_when_short` is deleted (its behaviour is gone); `test_decoys_same_hla_first` still passes (same-HLA case unchanged).
+
+`build_panel_constructs` also emits the scramble under key `"__scramble__"`:
+
+```python
+# src/rep2struct/benchmark.py  (extend build_panel_constructs)
+def build_panel_constructs(clonotype, cognate, hla, decoys, tcr_seqs, mhc_seqs, scramble_seed=0):
+    jobs = {}
+    peptides = {ep: ep for ep in [cognate, *decoys]}
+    peptides["__scramble__"] = scramble_peptide(cognate, scramble_seed)
+    for key, pep in peptides.items():
+        ann = Annotation(clonotype_id=clonotype.id, annotatable=True,
+                         confidence_tier="benchmark", epitope=pep, hla=hla)
+        jobs[key] = build_construct(clonotype, ann, tcr_seqs, mhc_seqs)
+    return jobs
+```
+
+Adjust `test_build_panel_constructs_keys_and_peptides` to expect keys `{"GILGFVFTL","NLVPMVATV","__scramble__"}` and that `jobs["__scramble__"].construct_fasta` contains a permutation of the cognate.
+
+### R2. Task 3 revision — None/tie-safe `retrieval_result` (replaces the version above)
+
+```python
+# src/rep2struct/benchmark.py  (replace retrieval_result)
+def retrieval_result(contacts, cognate):
+    # exclude the scramble key from retrieval; it is a separate contrast
+    scored = {e: v for e, v in contacts.items() if e != "__scramble__"}
+    cval = scored.get(cognate)
+    valid = [v for v in scored.values() if v is not None]
+    ranked = sorted(scored, key=lambda e: (-1.0 if scored[e] is None else scored[e]),
+                    reverse=True)
+    if cval is None or not valid:
+        top1 = False                      # no-call, never a win (review code-F1)
+    else:
+        best = max(valid)
+        n_at_best = sum(1 for v in valid if v == best)
+        top1 = (cval == best) and (n_at_best == 1)   # ties are NOT wins
+    return {"ranked": ranked, "top1": top1, "cognate_contact": cval}
+```
+
+Add tests:
+
+```python
+# tests/test_benchmark.py
+def test_retrieval_none_cognate_is_not_a_win():
+    assert bm.retrieval_result({"COG": None, "D": 5.0}, "COG")["top1"] is False
+
+def test_retrieval_all_none_is_not_a_win():
+    assert bm.retrieval_result({"COG": None, "D": None}, "COG")["top1"] is False
+
+def test_retrieval_tie_is_not_a_win():
+    assert bm.retrieval_result({"COG": 5.0, "D": 5.0}, "COG")["top1"] is False
+```
+
+### R3. Task 4 revision — CDR3β-residue pLDDT (replaces `model_plddt`/`plddt_by_epitope`)
+
+```python
+# src/rep2struct/benchmark.py  (replace model_plddt + plddt_by_epitope)
+def _residue_bfactors(cif_path, chain_id):
+    from Bio.PDB import MMCIFParser
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        m = next(MMCIFParser(QUIET=True).get_structure("x", str(cif_path)).get_models())
+    for ch in m:
+        if ch.id == chain_id:
+            # per-residue mean B-factor (pLDDT column), residue order = input seq order
+            return [float(np.mean([a.get_bfactor() for a in r])) for r in ch]
+    return None
+
+def model_cdr3b_plddt(cif_path, chain_b_seq, cdr3b):
+    """Mean pLDDT over the CDR3beta residues, located as a substring of chain B."""
+    if not chain_b_seq or not cdr3b:
+        return None
+    start = chain_b_seq.find(cdr3b)
+    if start < 0:
+        return None
+    bfs = _residue_bfactors(cif_path, "B")
+    if bfs is None or start + len(cdr3b) > len(bfs):
+        return None
+    return mean_confidence(bfs[start:start + len(cdr3b)])
+
+def cdr3b_plddt_by_epitope(paths_by_epitope, chain_b_seq, cdr3b):
+    out = {}
+    for ep, paths in paths_by_epitope.items():
+        vals = [v for v in (model_cdr3b_plddt(p, chain_b_seq, cdr3b) for p in paths)
+                if v is not None]
+        out[ep] = float(np.median(vals)) if vals else None
+    return out
+```
+
+Replace the Task 4 pLDDT tests with:
+
+```python
+# tests/test_benchmark.py
+def test_cdr3b_plddt_none_when_substring_absent():
+    assert bm.model_cdr3b_plddt(str(FIX/"cognate_min.cif"), "AAAA", "ZZZZ") is None
+
+def test_cdr3b_plddt_returns_float_when_located():
+    # chain B of cognate_min.cif is a poly sequence in the fixture; if its residue
+    # count >= len(query) and the query matches, we get a float, else None
+    v = bm.model_cdr3b_plddt(str(FIX/"cognate_min.cif"), "BBBB", "BB")
+    assert v is None or isinstance(v, float)
+```
+
+Note (review code-F4): whether Protenix writes pLDDT into the `.cif` B-factor column is **unverified**. Before trusting B2, parse one real Protenix output at the fold gate and confirm the B-factor column varies per residue (fixtures carry placeholder 1.0). If it does not, B2 is dropped, not silently reported.
+
+### R4. Task 5 addition — TCR-blind null, label-permutation, paired contrast
+
+```python
+# src/rep2struct/benchmark.py  (append)
+def tcr_blind_prediction(per_tcr_contacts):
+    """Constant predictor: the peptide with the highest mean contact across TCRs.
+    per_tcr_contacts: list of dict epitope->contact|None (scramble key excluded)."""
+    sums, counts = {}, {}
+    for d in per_tcr_contacts:
+        for ep, v in d.items():
+            if v is None:
+                continue
+            sums[ep] = sums.get(ep, 0.0) + v
+            counts[ep] = counts.get(ep, 0) + 1
+    if not sums:
+        return None
+    means = {ep: sums[ep] / counts[ep] for ep in sums}
+    return max(means, key=means.get)
+
+def tcr_blind_accuracy(per_tcr_contacts, cognates):
+    pred = tcr_blind_prediction(per_tcr_contacts)
+    if pred is None:
+        return 0.0
+    return sum(1 for cog in cognates if cog == pred) / len(cognates) if cognates else 0.0
+
+def label_permutation_p(observed_top1_mean, per_tcr_contacts, cognates,
+                        n_perm=10000, seed=0):
+    """p that observed Top-1 > a predictor under random reassignment of cognate labels."""
+    rng = _random.Random(seed)
+    cogs = list(cognates)
+    ge = 0
+    for _ in range(n_perm):
+        perm = cogs[:]
+        rng.shuffle(perm)
+        hits = 0
+        for d, cog in zip(per_tcr_contacts, perm):
+            r = retrieval_result({**d, "__scramble__": None}, cog)
+            hits += 1 if r["top1"] else 0
+        if hits / len(cogs) >= observed_top1_mean:
+            ge += 1
+    return (ge + 1) / (n_perm + 1)
+
+def paired_contrast(pairs, seed=0, n_boot=2000):
+    """pairs: list of (cognate_contact, scramble_contact), Nones dropped.
+    Returns dict{n, frac_cognate_higher, mean_delta, ci_delta}."""
+    vals = [(c, s) for (c, s) in pairs if c is not None and s is not None]
+    if not vals:
+        return {"n": 0, "frac_cognate_higher": None, "mean_delta": None, "ci_delta": [None, None]}
+    deltas = [c - s for (c, s) in vals]
+    frac = sum(1 for d in deltas if d > 0) / len(deltas)
+    rng = _random.Random(seed)
+    boots = []
+    for _ in range(n_boot):
+        boots.append(sum(deltas[rng.randrange(len(deltas))] for _ in range(len(deltas))) / len(deltas))
+    boots.sort()
+    return {"n": len(deltas), "frac_cognate_higher": frac,
+            "mean_delta": sum(deltas) / len(deltas),
+            "ci_delta": [boots[int(0.025 * n_boot)], boots[min(int(0.975 * n_boot), n_boot - 1)]]}
+```
+
+Tests:
+
+```python
+# tests/test_benchmark.py
+def test_tcr_blind_accuracy_constant_predictor():
+    contacts = [{"A": 9.0, "B": 1.0}, {"A": 8.0, "B": 2.0}]  # A always highest
+    assert bm.tcr_blind_prediction(contacts) == "A"
+    assert bm.tcr_blind_accuracy(contacts, ["A", "B"]) == 0.5  # blind picks A for both
+
+def test_paired_contrast_cognate_higher():
+    r = bm.paired_contrast([(10.0, 2.0), (8.0, 3.0)])
+    assert r["frac_cognate_higher"] == 1.0 and r["mean_delta"] > 0
+
+def test_paired_contrast_empty():
+    assert bm.paired_contrast([(None, 1.0)])["n"] == 0
+```
+
+### R5. Task 6 revision — `select_seed_tcrs` seeded-random within stratum; driver `standardize_alleles`; manifest stores cdr3b/chain_b_seq/scramble; drop dead code
+
+```python
+# scripts/run_benchmark_arm.py  (replace select_seed_tcrs)
+import random as _random
+def select_seed_tcrs(clonotypes, truth, annotations, hla, n, prefer_novel=True, seed=0):
+    dist = {a.clonotype_id: getattr(a, "tcrdist", None) for a in annotations}
+    cands = [c for c in clonotypes if truth.get(c.id, (None, None))[1] == hla]
+    novel = [c for c in cands if bm.is_novel(dist.get(c.id))]
+    leaked = [c for c in cands if not bm.is_novel(dist.get(c.id))]
+    rng = _random.Random(seed)
+    rng.shuffle(novel); rng.shuffle(leaked)          # random within stratum (review M3)
+    ordered = (novel + leaked) if prefer_novel else (leaked + novel)
+    return [c.id for c in ordered[:n]]
+```
+
+`_load_truth_and_anns` must call `standardize_alleles` on the selected clonotypes before `build_tcr_seqs` (review code-F3), matching `run_validation_arm.main`:
+
+```python
+# scripts/run_benchmark_arm.py  (in _emit_cmd, before build_tcr_seqs)
+    from rep2struct.ingest import standardize_alleles
+    sel_clonos = [c for c in clonotypes if c.id in set(selected)]
+    standardize_alleles(sel_clonos)                  # sets trav_allele/trbv_allele
+    tcr_seqs = build_tcr_seqs(sel_clonos)
+```
+
+`emit_manifest` stores `cdr3b` and `chain_b_seq` (needed for CDR3β pLDDT), emits the scramble construct, and drops the dead `by_id`/`clono_by_id` lines. Replace its body loop:
+
+```python
+# scripts/run_benchmark_arm.py  (emit_manifest, revised loop; also accept clono_by_id map)
+def emit_manifest(out_dir, selected, truth, annotations, panel,
+                  tcr_seqs, mhc_seqs, k, samples, clono_by_id):
+    out_dir = Path(out_dir)
+    (out_dir / "constructs").mkdir(parents=True, exist_ok=True)
+    dist = {a.clonotype_id: getattr(a, "tcrdist", None) for a in annotations}
+    manifest = {}
+    for cid in selected:
+        cognate, hla = truth[cid]
+        decoys = bm.decoys_for(cognate, hla, panel, k)
+        clono = clono_by_id[cid]                      # real clonotype (has cdr3b)
+        jobs = bm.build_panel_constructs(clono, cognate, hla, decoys,
+                                         tcr_seqs, mhc_seqs)
+        eps = {}
+        for key, job in jobs.items():
+            fp = out_dir / "constructs" / f"{cid}__{key}.fasta"
+            fp.write_text(job.construct_fasta)
+            eps[key] = str(fp)
+        manifest[cid] = {"cognate": cognate, "hla": hla, "decoys": decoys,
+                         "epitopes": eps, "novel": bm.is_novel(dist.get(cid)),
+                         "tcrdist": dist.get(cid), "samples": samples,
+                         "cdr3b": clono.cdr3b, "chain_b_seq": tcr_seqs[cid]["B"]}
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    return manifest
+```
+
+`_emit_cmd` passes `clono_by_id = {c.id: c for c in sel_clonos}` to `emit_manifest`, and the driver test updates its `emit_manifest(...)` call to pass a `clono_by_id={"a": clonos[0]}` mapping and to assert the manifest entry carries `cdr3b` and `chain_b_seq`, and that `epitopes` includes `"__scramble__"`.
+
+### R6. Task 7 revision — per-stratum chance, TCR-blind null, paired contrast, CDR3β pLDDT, drop missing-cognate TCRs (replaces `evaluate` + report)
+
+```python
+# src/rep2struct/benchmark.py  (replace evaluate)
+def evaluate(manifest, folds_root, annotations):
+    seq_ep = {a.clonotype_id: getattr(a, "epitope", None) for a in annotations}
+    per = {}
+    for cid, ent in manifest.items():
+        pbe = _paths_by_epitope(ent, folds_root, cid)
+        contacts = contact_by_epitope(pbe)             # includes "__scramble__"
+        cog = ent["cognate"]
+        if contacts.get(cog) is None:
+            continue                                   # no cognate fold -> drop, do not score as win
+        panel_contacts = {e: v for e, v in contacts.items() if e != "__scramble__"}
+        plddts = cdr3b_plddt_by_epitope(
+            {e: p for e, p in pbe.items() if e != "__scramble__"},
+            ent.get("chain_b_seq"), ent.get("cdr3b"))
+        decoy_c = [contacts[e] for e in ent["decoys"] if contacts.get(e) is not None]
+        per[cid] = {
+            "novel": ent["novel"],
+            "panel_contacts": panel_contacts,
+            "contact_top1": 1.0 if retrieval_result(contacts, cog)["top1"] else 0.0,
+            "plddt_top1": 1.0 if retrieval_result(plddts, cog)["top1"] else 0.0,
+            "seq_top1": 1.0 if sequence_baseline_top1(seq_ep.get(cid), cog) else 0.0,
+            "cognate_contact": contacts.get(cog),
+            "scramble_contact": contacts.get("__scramble__"),
+            "decoy_contacts": decoy_c,
+            "cognate": cog,
+            "n_panel": 1 + len(ent["decoys"]),
+        }
+
+    def strata(rows):
+        if not rows:
+            return {"n": 0}
+        chance = sum(1.0 / r["n_panel"] for r in rows) / len(rows)
+        contact_hits = [r["contact_top1"] for r in rows]
+        pt, lo, hi = bootstrap_ci(contact_hits)
+        blind_acc = tcr_blind_accuracy([r["panel_contacts"] for r in rows],
+                                       [r["cognate"] for r in rows])
+        perm_p = label_permutation_p(pt, [r["panel_contacts"] for r in rows],
+                                     [r["cognate"] for r in rows])
+        pc = paired_contrast([(r["cognate_contact"], r["scramble_contact"]) for r in rows])
+        return {
+            "n": len(rows), "chance": chance, "tcr_blind_acc": blind_acc,
+            "contact": {"top1": pt, "ci": [lo, hi],
+                        "p_vs_chance": permutation_p(contact_hits, chance),
+                        "p_vs_blind": perm_p,
+                        "auroc": auroc([(r["cognate_contact"], r["decoy_contacts"])
+                                        for r in rows if r["cognate_contact"] is not None])},
+            "plddt": {"top1": sum(r["plddt_top1"] for r in rows) / len(rows)},
+            "seq": {"top1": sum(r["seq_top1"] for r in rows) / len(rows)},
+            "scramble_contrast": pc,
+        }
+
+    rows = list(per.values())
+    return {"per_tcr": per,
+            "overall": strata(rows),
+            "novel": strata([r for r in rows if r["novel"]]),
+            "leaked": strata([r for r in rows if not r["novel"]])}
+```
+
+`score_manifest` report reads the new fields; replace its report block:
+
+```python
+# scripts/run_benchmark_arm.py  (score_manifest, report section)
+    result = bm.evaluate(manifest, out_dir / "folds", anns)
+    lines = ["# Structure-vs-sequence benchmark (seed = calibration pilot)\n"]
+    for strat in ("overall", "novel", "leaked"):
+        s = result[strat]
+        if s.get("n", 0) == 0:
+            lines.append(f"## {strat}: no TCRs\n"); continue
+        c = s["contact"]; pc = s["scramble_contrast"]
+        lines.append(f"## {strat} (n={s['n']}, naive chance={s['chance']:.3f}, "
+                     f"TCR-blind null={s['tcr_blind_acc']:.3f})")
+        lines.append(f"- contact Top-1 {c['top1']:.2f} CI[{c['ci'][0]:.2f},{c['ci'][1]:.2f}] "
+                     f"p_vs_chance={c['p_vs_chance']:.4f} p_vs_blind={c['p_vs_blind']:.4f} "
+                     f"AUROC={c['auroc']}")
+        lines.append(f"- CO-PRIMARY within-pair cognate>scramble: "
+                     f"frac={pc['frac_cognate_higher']} mean_delta={pc['mean_delta']} "
+                     f"CI{pc['ci_delta']} (n_pairs={pc['n']})")
+        lines.append(f"- CDR3b pLDDT Top-1 {s['plddt']['top1']:.2f} | "
+                     f"sequence Top-1 {s['seq']['top1']:.2f}\n")
+    (out_dir / "benchmark_report.md").write_text("\n".join(lines))
+    return result
+```
+
+Update `test_evaluate_stratifies_and_scores`: build the synthetic folds with a `__scramble__` construct dir too (`_make_folds` writes `{cid}__GILGFVFTL`, `{cid}__NLVPMVATV`, and `{cid}____scramble__`), add `"cdr3b"` and `"chain_b_seq"` to the manifest entry, and assert `out["novel"]["scramble_contrast"]["n"] >= 0` and `out["novel"]["tcr_blind_acc"] in (0.0, 1.0)` alongside the existing checks. The headline assertion changes from reading `contact.top1` to also requiring `contact.p_vs_blind` to be present.
+
+### R7. MANUAL FOLD GATE addition
+
+At the gate, before scoring: parse ONE real Protenix `.cif` and confirm (a) five chains A-E, (b) the B-factor column varies per residue (pLDDT present) — else drop B2; (c) chain B sequence contains the clonotype's `cdr3b` substring — else CDR3β pLDDT returns None for that TCR (acceptable, logged). Fold the `__scramble__` construct alongside cognate+decoys for every TCR.

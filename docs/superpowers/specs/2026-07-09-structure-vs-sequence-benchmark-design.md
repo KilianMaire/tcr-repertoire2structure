@@ -8,8 +8,13 @@ Status: approved design, pre-plan
 Turn R2S from an honest integration demo into a genuine, falsifiable scientific
 contribution. Two tiers, in sequence:
 
-1. **Seed (by 2026-07-13, hackathon):** a small, honest pilot with a stated N and
-   confidence intervals. A null result is acceptable and still honest.
+1. **Seed (by 2026-07-13, hackathon):** a **calibration / within-pair-contrast
+   pilot**, not an inferential novel-stratum test. Adversarial review (S1/F3)
+   established that n≈6 novel TCRs is underpowered and the novel stratum's epitope
+   mix is confounded with novelty, so the seed's inferential weight sits on the
+   within-pair cognate-vs-scramble contrast (well powered) plus the TCR-blind
+   permutation control; decoy-retrieval Top-1 is reported as descriptive with its
+   null. A seed "null" is a *methods* null (pipeline runs), not a scientific one.
 2. **Preprint (after):** the same code scaled to a full panel, multi-donor,
    pLDDT-combination analysis, and a proper held-out novel set.
 
@@ -25,12 +30,36 @@ The seed's code IS the preprint's code. Nothing is thrown away.
 This is the value R2S adds over `tcrdist`: it targets the unannotatable majority,
 not the easy leaked minority.
 
-## Why the negatives are free and real
+## Why the negatives are (mostly) free and real
 
 The 10x 4-donor CD8 dextramer panel is a **closed set of epitopes**; each labelled
-clonotype binds exactly one. So for a TCR whose cognate is epitope `e`, every other
-panel epitope is a **verified non-binder** (a real decoy, not a shuffled peptide).
-The binder/non-binder benchmark needs no wet-lab and no synthetic negatives.
+clonotype has one dominant dextramer call. So for a TCR whose cognate is epitope
+`e`, every other panel epitope is a **non-cognate by dominant dextramer call** (a
+real decoy, no wet-lab needed). Caveat (adversarial review S4): dextramer-positive
+is not identical to functional binding, and TCR cross-reactivity means a "decoy"
+can be a genuine binder; a good metric ranking it high would be wrongly penalised.
+We therefore (a) downgrade the language from "verified non-binder", and (b) report
+retrieval with and without cross-reactivity-suspect decoys in the preprint. The
+seed's clean specificity signal comes from the within-pair scramble contrast below,
+not from the decoy labels.
+
+## The peptide-intrinsic confound (the control that gates everything)
+
+CDR3-peptide contact count is dominated by peptide-side properties (length, bulk,
+groove bulge), and AF3-class models dock every peptide into canonical geometry
+(Honesty Rule 2). With a closed ~4-epitope panel and `k=3`, every TCR shares the
+same decoy set, so a **TCR-blind predictor** that always ranks the highest-intrinsic-
+contact peptide first can beat naive chance `1/(k+1)`. A positive Top-1 alone would
+not distinguish real TCR specificity from "one peptide makes more contacts". So:
+
+- The null is the **empirical TCR-blind predictor** (rank by per-peptide mean contact
+  across TCRs), not `1/(k+1)`. A **label-permutation test** (shuffle which TCR owns
+  which cognate) must show observed Top-1 > TCR-blind.
+- Add a **within-pair scramble control**: fold each cognate peptide's
+  composition-preserving shuffle. `cognate contact > its own scramble`, aggregated
+  across TCRs, is a within-peptide contrast the intrinsic bias cannot produce, and
+  it has far more statistical power (N x samples of paired comparisons) than n≈6
+  retrieval. This is the seed's **co-primary, clean** readout.
 
 ## Task framing: retrieval
 
