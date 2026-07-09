@@ -40,3 +40,14 @@ def test_emit_manifest_writes_constructs(tmp_path):
     assert (tmp_path / "manifest.json").exists()
     for p in man["a"]["epitopes"].values():
         assert Path(p).exists()
+
+def test_select_balance_epitopes_spreads_across_cognates():
+    # 3 TCR for epitope P, 1 for Q; balanced pick of 2 must include Q, not two P
+    clonos = [Clonotype(x,"TRAV1","C"+x,"TRBV1","CB"+x,1) for x in ["a","b","c","d"]]
+    truth = {"a":("P","HLA-A*02:01"),"b":("P","HLA-A*02:01"),
+             "c":("P","HLA-A*02:01"),"d":("Q","HLA-A*02:01")}
+    anns = [Annotation(x, False, "unannotatable", tcrdist=None) for x in ["a","b","c","d"]]
+    sel = drv.select_seed_tcrs(clonos, truth, anns, "HLA-A*02:01", n=2,
+                               balance_epitopes=True)
+    cogs = sorted(truth[cid][0] for cid in sel)
+    assert cogs == ["P", "Q"]   # one from each epitope, not P+P

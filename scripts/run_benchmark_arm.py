@@ -19,7 +19,7 @@ from rep2struct.seqs import build_tcr_seqs, build_mhc_seqs
 from run_validation_arm import labeled_clonotypes, nearest_cache, annotations_from_cache
 
 def select_seed_tcrs(clonotypes, truth, annotations, hla, n, prefer_novel=True, seed=0,
-                     unannotatable_only=False):
+                     unannotatable_only=False, balance_epitopes=False):
     dist = {a.clonotype_id: getattr(a, "tcrdist", None) for a in annotations}
     annot = {a.clonotype_id: a.annotatable for a in annotations}
     cands = [c for c in clonotypes if truth.get(c.id, (None, None))[1] == hla]
@@ -30,7 +30,21 @@ def select_seed_tcrs(clonotypes, truth, annotations, hla, n, prefer_novel=True, 
     rng = _random.Random(seed)
     rng.shuffle(novel); rng.shuffle(leaked)
     ordered = (novel + leaked) if prefer_novel else (leaked + novel)
-    return [c.id for c in ordered[:n]]
+    if not balance_epitopes:
+        return [c.id for c in ordered[:n]]
+    from collections import defaultdict
+    by_ep = defaultdict(list)
+    for c in ordered:
+        by_ep[truth[c.id][0]].append(c)
+    eps = sorted(by_ep, key=lambda e: (-len(by_ep[e]), e))
+    picked = []
+    while len(picked) < n and any(by_ep[e] for e in eps):
+        for e in eps:
+            if by_ep[e]:
+                picked.append(by_ep[e].pop(0))
+                if len(picked) >= n:
+                    break
+    return [c.id for c in picked]
 
 def emit_manifest(out_dir, selected, truth, annotations, panel,
                   tcr_seqs, mhc_seqs, k, samples, clono_by_id):
@@ -71,7 +85,7 @@ def _emit_cmd(args):
     clonotypes, truth, anns, in_hla = _load_truth_and_anns(args.dextramer_dir, args.hla)
     counts = bm.per_hla_novel_counts(in_hla, truth, anns)
     print(json.dumps(counts.get(args.hla, {}), indent=2))
-    selected = select_seed_tcrs(in_hla, truth, anns, args.hla, args.n, unannotatable_only=args.unannotatable_only)
+    selected = select_seed_tcrs(in_hla, truth, anns, args.hla, args.n, unannotatable_only=args.unannotatable_only, balance_epitopes=args.balance_epitopes)
     panel = bm.panel_epitopes(truth)
     sel_clonos = [c for c in clonotypes if c.id in set(selected)]
     standardize_alleles(sel_clonos)
@@ -90,6 +104,7 @@ def main():
     e.add_argument("--hla", required=True); e.add_argument("--n", type=int, default=4)
     e.add_argument("--k", type=int, default=3); e.add_argument("--samples", type=int, default=5)
     e.add_argument("--unannotatable-only", action="store_true")
+    e.add_argument("--balance-epitopes", action="store_true")
     e.set_defaults(func=_emit_cmd)
     args = ap.parse_args()
     args.func(args)
