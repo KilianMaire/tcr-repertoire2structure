@@ -211,5 +211,9 @@ def test_protenix_notebook_computes_pre_fold_msa():
                    "/content/msa", "unpairedMsaPath", "len(s) >= 20", "_msa_manifest.json",
                    "MSA_FAIL"):
         assert marker in src, f"missing MSA marker: {marker}"
+    # import run_mmseqs2 from colabfold.colabfold (requests-only), NOT colabfold.batch
+    # which imports alphafold at load and dies without the heavy [alphafold] extra (live-verified)
+    assert "from colabfold.colabfold import run_mmseqs2" in src
+    assert "colabfold.batch" not in src
     # the MSA cell must run BEFORE the write-inputs cell (the fold consumes the injected paths)
     assert src.index("run_mmseqs2") < src.index("write each embedded record")
