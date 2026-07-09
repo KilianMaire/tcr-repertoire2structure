@@ -3,6 +3,7 @@ from collections import defaultdict
 import random as _random
 from .schema import Annotation
 from .foldprep import build_construct
+from .qc import ensemble_contact
 
 def is_novel(tcrdist, leak_thr: float = 1.0) -> bool:
     return tcrdist is None or tcrdist > leak_thr
@@ -51,3 +52,29 @@ def build_panel_constructs(clonotype, cognate, hla, decoys, tcr_seqs, mhc_seqs, 
                          confidence_tier="benchmark", epitope=pep, hla=hla)
         jobs[key] = build_construct(clonotype, ann, tcr_seqs, mhc_seqs)
     return jobs
+
+def contact_by_epitope(paths_by_epitope):
+    return {ep: ensemble_contact(paths)[0] for ep, paths in paths_by_epitope.items()}
+
+def retrieval_result(contacts, cognate):
+    # exclude the scramble key from retrieval; it is a separate contrast
+    scored = {e: v for e, v in contacts.items() if e != "__scramble__"}
+    cval = scored.get(cognate)
+    valid = [v for v in scored.values() if v is not None]
+    ranked = sorted(scored, key=lambda e: (-1.0 if scored[e] is None else scored[e]),
+                    reverse=True)
+    if cval is None or not valid:
+        top1 = False
+    else:
+        best = max(valid)
+        n_at_best = sum(1 for v in valid if v == best)
+        top1 = (cval == best) and (n_at_best == 1)
+    return {"ranked": ranked, "top1": top1, "cognate_contact": cval}
+
+def auroc(pairs):
+    num = den = 0.0
+    for cog, decoys in pairs:
+        for d in decoys:
+            den += 1
+            num += 1.0 if cog > d else (0.5 if cog == d else 0.0)
+    return None if den == 0 else num / den

@@ -1,5 +1,8 @@
+from pathlib import Path
 from rep2struct import benchmark as bm
 from rep2struct.schema import Clonotype, Annotation
+
+FIX = Path(__file__).parent / "fixtures"
 
 def test_is_novel():
     assert bm.is_novel(None) is True
@@ -52,3 +55,31 @@ def test_build_panel_constructs_keys_and_peptides():
     scr_pep = jobs["__scramble__"].construct_fasta.split(">E\n")[1].split("\n")[0]
     assert sorted(scr_pep) == sorted("GILGFVFTL")
     assert jobs["GILGFVFTL"].clonotype_id == "c1"
+
+def test_contact_and_retrieval_with_fixtures():
+    paths = {"COGNATE": [str(FIX/"cognate_min.cif")],
+             "DECOY":   [str(FIX/"scramble_min.cif")]}
+    contacts = bm.contact_by_epitope(paths)
+    assert contacts["COGNATE"] >= contacts["DECOY"]
+    res = bm.retrieval_result(contacts, "COGNATE")
+    assert res["ranked"][0] == "COGNATE"
+    assert res["top1"] is True
+
+def test_auroc_pairs():
+    assert bm.auroc([(10.0, [1.0, 2.0])]) == 1.0
+    assert bm.auroc([(1.0, [10.0])]) == 0.0
+    assert bm.auroc([(5.0, [5.0])]) == 0.5
+    assert bm.auroc([]) is None
+
+def test_retrieval_none_cognate_is_not_a_win():
+    assert bm.retrieval_result({"COG": None, "D": 5.0}, "COG")["top1"] is False
+
+def test_retrieval_all_none_is_not_a_win():
+    assert bm.retrieval_result({"COG": None, "D": None}, "COG")["top1"] is False
+
+def test_retrieval_tie_is_not_a_win():
+    assert bm.retrieval_result({"COG": 5.0, "D": 5.0}, "COG")["top1"] is False
+
+def test_retrieval_excludes_scramble_key():
+    r = bm.retrieval_result({"COG": 5.0, "D": 1.0, "__scramble__": 99.0}, "COG")
+    assert r["top1"] is True and "__scramble__" not in r["ranked"]
