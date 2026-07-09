@@ -29,6 +29,24 @@ def _txt(s):
     return {"content": [{"type": "text", "text": s}]}
 
 
+def _scramble_null(cognate_score_path):
+    """The group's OWN scramble score, read from the sibling file the fold writes next to the
+    cognate one ({cid}_cognate.score and {cid}_scramble.score). That score IS the per-group
+    binding-score null, so it sets the threshold (beat-the-null: a real cognate must score
+    above its own shuffled peptide). Returns None if this is not a cognate score path or the
+    scramble sibling was not downloaded, so the caller can fall back to an explicit threshold."""
+    p = Path(cognate_score_path)
+    if "_cognate" not in p.name:
+        return None
+    sib = p.with_name(p.name.replace("_cognate", "_scramble"))
+    if not sib.exists():
+        return None
+    try:
+        return float(sib.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
 def _load(rd, name, cls):
     rs = RunState(rd)
     return [cls(**d) for d in rs.read_stage(name)] if rs.stage_done(name) else []
@@ -190,7 +208,14 @@ async def qc_structure(args):
         validity_summary = "no model"
     elif metric == "binding_score":
         score = float(Path(paths[0]).read_text().strip())
-        res = verdict_binding(score, args["scramble_threshold"], args["clonotype_id"], tool=tool)
+        # Set the threshold from this group's OWN scramble null (the sibling scramble score the
+        # fold wrote), never a global number; fall back to the caller's explicit threshold only
+        # if that scramble file is absent. tcrdock's validated flu M1 null: cognate score
+        # -11.219 beats scramble -20.574 (interface PAE 11.2 vs 20.6).
+        threshold = _scramble_null(paths[0])
+        if threshold is None:
+            threshold = args["scramble_threshold"]
+        res = verdict_binding(score, threshold, args["clonotype_id"], tool=tool)
         validity_summary = "n/a (binding score)"
     else:
         # cdr3_peptide needs the full TCR-pMHC (A-E); peptide_groove is an mhcfine

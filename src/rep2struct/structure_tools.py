@@ -59,7 +59,9 @@ REGISTRY: list[StructureTool] = [
                "Live-validated class I 2026-07-09: folds a docking structure (a single "
                "merged chain, not A-E) but recognition is judged by the peptide<->TCR "
                "interface PAE, which discriminated a cognate flu M1 TCR (pae ~11, peptide "
-               "pLDDT 86) from its scramble (pae ~21, pLDDT 65)",
+               "pLDDT 86) from its scramble (pae ~21, pLDDT 65). QC threshold is set per group "
+               "from its OWN folded scramble null (score = -interface_pae): validated flu M1 "
+               "null cognate -11.219 beats scramble -20.574",
         colab_adapter="tcrdock_colab",
         # output_type stays "structure" (tcrdock IS the TCR:pMHC docking tool, must remain
         # selectable for structure jobs), but the single-chain output cannot feed the

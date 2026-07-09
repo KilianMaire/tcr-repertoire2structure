@@ -101,6 +101,53 @@ def test_qc_structure_binding_path_uses_binding_verdict(tmp_path):
     assert stored[0]["tool"] == "affinetune"
 
 
+def test_binding_threshold_is_set_from_the_groups_own_scramble_null(tmp_path):
+    # The tcrdock/affinetune verdict must use the group's OWN scramble score (the sibling
+    # {cid}_scramble.score the fold writes) as the threshold, NOT the caller-supplied number.
+    # Validated tcrdock flu M1 null: cognate -11.219 beats scramble -20.574 -> presented.
+    from rep2struct.runstate import RunState
+    rd = str(tmp_path / "run")
+    (tmp_path / "c1_cognate.score").write_text("-11.219")
+    (tmp_path / "c1_scramble.score").write_text("-20.574")
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "model_paths": [str(tmp_path / "c1_cognate.score")],
+         "tool": "tcrdock"}))
+    # a deliberately WRONG explicit threshold (999) would force not_presented if it were used;
+    # the derived null (-20.574) must win and give presented.
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": 999.0,
+         "output_type": "structure", "tool": "tcrdock"}))
+    assert res["structuredContent"]["qc_verdict"] == "presented"
+
+
+def test_binding_verdict_rejects_a_cognate_that_loses_to_its_own_scramble(tmp_path):
+    # Beat-the-null gate: a cognate scoring BELOW its own scramble null is not_presented,
+    # even if the caller passes a lax explicit threshold.
+    rd = str(tmp_path / "run")
+    (tmp_path / "c1_cognate.score").write_text("-25.0")   # worse (lower) than its scramble
+    (tmp_path / "c1_scramble.score").write_text("-20.574")
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "model_paths": [str(tmp_path / "c1_cognate.score")],
+         "tool": "tcrdock"}))
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": -999.0,
+         "output_type": "structure", "tool": "tcrdock"}))
+    assert res["structuredContent"]["qc_verdict"] == "not_presented"
+
+
+def test_binding_threshold_falls_back_to_explicit_when_no_scramble_sibling(tmp_path):
+    # Back-compat: a bare {cid}.score with no sibling scramble uses the caller's threshold.
+    rd = str(tmp_path / "run")
+    (tmp_path / "c1.score").write_text("0.9")
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "model_paths": [str(tmp_path / "c1.score")],
+         "tool": "affinetune"}))
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "c1", "scramble_threshold": 0.5,
+         "output_type": "binding_score", "tool": "affinetune"}))
+    assert res["structuredContent"]["qc_verdict"] == "presented"
+
+
 def test_output_type_is_derived_from_tool_not_agent_arg(tmp_path):
     # A binding tool recorded, but the caller passes the WRONG output_type="structure".
     # Derivation from the tool must still take the binding path.
