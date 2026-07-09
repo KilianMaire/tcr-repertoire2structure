@@ -116,6 +116,31 @@ def test_qc_protenix_cognate_losing_to_its_scramble_is_suspect(tmp_path, monkeyp
     assert res["structuredContent"]["qc_verdict"] == "suspect"
 
 
+def test_qc_protenix_real_output_layout_marks_construct_in_dir_not_filename(tmp_path, monkeypatch):
+    # Real Protenix output: the construct marker is in the DIRECTORY ({cid}_cognate/...),
+    # the CIF filename is cognate_sample_N.cif. QC must partition on the full path, not the
+    # basename, else it misses the split and drops the scramble calibration. Regression from
+    # the first live repatriated fold.
+    import shutil
+    from rep2struct import qc
+    monkeypatch.setattr(qc, "load_chains", lambda p: _clean_five_chains())
+    rd = str(tmp_path / "run")
+    cogdir = tmp_path / "9ab6b3bfa998_cognate" / "cognate" / "seed_101" / "predictions"
+    scrdir = tmp_path / "9ab6b3bfa998_scramble" / "scramble" / "seed_101" / "predictions"
+    cogdir.mkdir(parents=True); scrdir.mkdir(parents=True)
+    cogp, scrp = [], []
+    for i in range(3):
+        c = cogdir / f"cognate_sample_{i}.cif"; shutil.copy(FIX / "cognate_min.cif", c); cogp.append(str(c))
+        s = scrdir / f"scramble_sample_{i}.cif"; shutil.copy(FIX / "scramble_min.cif", s); scrp.append(str(s))
+    _run(at.record_fold_result.handler(
+        {"run_dir": rd, "clonotype_id": "9ab6b3bfa998", "model_paths": cogp + scrp, "tool": "protenix"}))
+    res = _run(at.qc_structure.handler(
+        {"run_dir": rd, "clonotype_id": "9ab6b3bfa998", "scramble_threshold": 999.0,
+         "output_type": "structure", "tool": "protenix"}))
+    # cognate ensemble beats its own scramble ensemble -> reliable, scalar 999 ignored
+    assert res["structuredContent"]["qc_verdict"] == "reliable"
+
+
 def test_build_fold_notebook_writes_wired_protenix_ipynb(tmp_path):
     import json
     from rep2struct.runstate import RunState

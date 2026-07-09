@@ -241,8 +241,11 @@ async def qc_structure(args):
             # this clonotype's OWN scramble ensemble (the per-clonotype null), never a global
             # number. Fall back to the caller's explicit threshold + a single model only when the
             # recorded paths carry no cognate/scramble split (legacy single-model records).
-            cognate = [p for p in paths if "_cognate" in Path(p).name]
-            scramble = [p for p in paths if "_scramble" in Path(p).name]
+            # Protenix marks the construct in the DIRECTORY ({cid}_cognate/...), not the
+            # filename (which is cognate_sample_N.cif), so match on the full path, not the
+            # basename. Learned from the first real repatriated fold.
+            cognate = [p for p in paths if "_cognate" in str(p)]
+            scramble = [p for p in paths if "_scramble" in str(p)]
             if cognate:
                 cog, _, _ = ensemble_contact(cognate)
                 scr, _, _ = ensemble_contact(scramble) if scramble else (None, 0, 0)

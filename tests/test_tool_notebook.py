@@ -144,6 +144,18 @@ def test_protenix_notebook_is_wired_not_a_stub():
         assert marker in src, f"missing recipe marker: {marker}"
 
 
+def test_protenix_notebook_repatriates_the_cifs():
+    # The loop is only closed if the agent can pull the folded CIFs back. The notebook must
+    # zip the out/ tree (preserving {cid}_cognate/{cid}_scramble in the paths) and hand it to
+    # the browser via files.download so the Playwright executor captures it.
+    nb = build_notebook("protenix", {"k": [{"name": "k", "sequences": [], "covalent_bonds": []}]})
+    src = "".join(s for cell in nb["cells"] for s in cell["source"])
+    assert "make_archive" in src and "protenix_folds" in src
+    assert "from google.colab import files" in src and "files.download" in src
+    # guarded so a non-Colab run does not die on the download
+    assert "DOWNLOAD_SKIPPED" in src
+
+
 def test_protenix_is_msa_free_matching_the_documented_reliable_run():
     # The run documented as reliable (docs/fold_qc_results.md) folded MSA-free after the
     # Protenix MSA server throttled; msa.py keeps the MSA out of the fold runtime. Lock it.
