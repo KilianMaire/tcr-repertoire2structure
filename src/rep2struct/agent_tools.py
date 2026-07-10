@@ -11,6 +11,7 @@ from .qc import score_model, verdict
 from .report import render_report
 from .schema import Clonotype, Annotation, QCResult
 from . import structure_tools
+from . import compute_routes
 from .grouping import partition
 from .msa import build_msa
 
@@ -189,6 +190,52 @@ async def build_fold_notebook(args):
     return r
 
 
+@tool("build_fold_artifact",
+      "Build the fold artifact (Colab notebook or local bash script) for one clonotype, "
+      "chosen by the compute route, write it under the run dir, and return its path.",
+      {"run_dir": str, "clonotype_id": str, "tool": str, "compute_route": str})
+async def build_fold_artifact(args):
+    import json as _json
+    from .tools.notebook import build_notebook
+    from .tools.protenix_script import build as build_script
+    rs = RunState(args["run_dir"])
+    jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
+    cid = args["clonotype_id"]
+    job = next((j for j in jobs if j["clonotype_id"] == cid), None)
+    if job is None:
+        return _txt(f"no fold job for {cid}")
+    tool = args["tool"]
+    route = args["compute_route"]
+    kind = compute_routes.artifact_kind_for(route)
+    wired = compute_routes.is_wired(route)
+    # tcrdock needs the gene-level Clonotype+Annotation (see build_fold_notebook); read them
+    # back only when needed so the artifact inputs match the notebook path exactly.
+    clon = ann = None
+    if tool == "tcrdock":
+        clon = next((c for c in _load(args["run_dir"], "ingest", Clonotype) if c.id == cid), None)
+        ann = next((a for a in _load(args["run_dir"], "annotate", Annotation)
+                    if a.clonotype_id == cid), None)
+    inputs = _fold_inputs(tool, job, cid, clon, ann)
+    if kind == "colab_notebook":
+        nb = build_notebook(tool, inputs)
+        nb_dir = Path(args["run_dir"]) / "notebooks"
+        nb_dir.mkdir(parents=True, exist_ok=True)
+        out = nb_dir / f"{cid}_{tool}.ipynb"
+        out.write_text(_json.dumps(nb, indent=1))
+    else:  # bash_script (local_gpu, and the honest ssh/server handoff)
+        working = job.get("working_path") or "."
+        script = build_script(inputs, working_path=working)
+        sc_dir = Path(args["run_dir"]) / "scripts"
+        sc_dir.mkdir(parents=True, exist_ok=True)
+        out = sc_dir / f"{cid}_{tool}.sh"
+        out.write_text(script)
+    note = "" if wired else f" (route '{route}' runner not wired; run the script yourself)"
+    r = _txt(f"{kind} for {cid} ({tool}) via {route} written to {out}{note}")
+    r["structuredContent"] = {"artifact_path": str(out), "artifact_kind": kind,
+                              "route_wired": wired, "clonotype_id": cid, "tool": tool}
+    return r
+
+
 @tool("record_fold_result", "Record the model paths a fold produced for one clonotype, with the tool used.",
       {"run_dir": str, "clonotype_id": str, "model_paths": list, "tool": str})
 async def record_fold_result(args):
@@ -311,6 +358,6 @@ async def render_final_report(args):
 def build_server():
     return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
         ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
-        list_structure_tools, build_fold_notebook, record_fold_result, qc_structure,
-        render_final_report,
+        list_structure_tools, build_fold_notebook, build_fold_artifact, record_fold_result,
+        qc_structure, render_final_report,
     ])
