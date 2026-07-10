@@ -13,3 +13,4 @@ Data/
 # local run outputs / datasets (never redistribute TABLO)
 *.fasta
 runs/
+*.egg-info/
