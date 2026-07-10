@@ -62,7 +62,10 @@ def get_default() -> ComputeRoute:
 
 
 def by_name(name: str) -> ComputeRoute:
-    return next(r for r in REGISTRY if r.name == name)
+    try:
+        return next(r for r in REGISTRY if r.name == name)
+    except StopIteration:
+        raise ValueError(f"unknown compute route {name!r}") from None
 
 
 def recommend(context: str = "") -> ComputeRoute:

@@ -1,3 +1,5 @@
+import pytest
+
 from rep2struct import compute_routes as cr
 
 
@@ -19,6 +21,9 @@ def test_artifact_kind_per_route():
     assert cr.artifact_kind_for("colab") == "colab_notebook"
     assert cr.artifact_kind_for("local_gpu") == "bash_script"
     assert cr.artifact_kind_for("ssh") == "bash_script"
+    assert cr.artifact_kind_for("server") == "bash_script"
+    assert cr.by_name("local_gpu").required_fields == ("working_path",)
+    assert cr.by_name("server").required_fields == ("address", "path")
 
 
 def test_ssh_requires_connection_fields_and_marks_password_secret():
@@ -39,3 +44,8 @@ def test_as_dicts_exposes_fields_but_never_a_secret_value():
     assert d["ssh"]["required_fields"] == ["host", "user", "remote_path"]
     assert d["ssh"]["secret_fields"] == ["password"]
     assert d["ssh"]["wired"] is False and d["colab"]["is_default"] is True
+
+
+def test_by_name_unknown_raises_valueerror():
+    with pytest.raises(ValueError):
+        cr.by_name("nope")
