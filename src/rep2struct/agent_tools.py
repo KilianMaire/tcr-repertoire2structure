@@ -151,6 +151,16 @@ async def list_structure_tools(args):
     return r
 
 
+@tool("list_compute_routes",
+      "List the compute routes (Colab, local GPU, SSH, server), the fields each needs, and "
+      "whether its runner is wired, so the intake agent asks the right questions.",
+      {"run_dir": str})
+async def list_compute_routes(args):
+    r = _txt("compute route registry")
+    r["structuredContent"] = {"routes": compute_routes.as_dicts()}
+    return r
+
+
 def _fold_inputs(tool: str, job: dict, clonotype_id: str, clon=None, ann=None) -> dict:
     """Shape a fold job's construct into the tool's Colab inputs. mhcfine, affinetune and
     tcrdock each take a cognate + scramble pair (keys prefixed by clonotype id so per-clonotype
@@ -396,6 +406,6 @@ async def render_final_report(args):
 def build_server():
     return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
         ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
-        list_structure_tools, build_fold_notebook, build_fold_artifact, record_fold_result,
+        list_structure_tools, list_compute_routes, build_fold_notebook, build_fold_artifact, record_fold_result,
         record_local_folds, qc_structure, render_final_report,
     ])
