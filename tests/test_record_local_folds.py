@@ -32,3 +32,15 @@ def test_record_local_folds_writes_the_folds_stage(tmp_path):
     assert r["structuredContent"]["recorded"] == 1
     done = RunState(str(tmp_path)).read_stage("folds")
     assert "c0" in done and done["c0"]["tool"] == "protenix"
+
+
+def test_record_local_folds_does_not_clobber_existing(tmp_path):
+    rs = RunState(str(tmp_path))
+    rs.write_stage("folds", {"c0": {"paths": ["cloud/complete.cif"], "tool": "protenix"}})
+    out = tmp_path / "out"
+    _write_cif(out / "c0_cognate" / "preds" / "partial.cif")  # disk scan would find only this
+    r = asyncio.run(agent_tools.record_local_folds.handler(
+        {"run_dir": str(tmp_path), "tool": "protenix"}))
+    assert r["structuredContent"]["recorded"] == 0
+    done = rs.read_stage("folds")
+    assert done["c0"]["paths"] == ["cloud/complete.cif"]  # prior complete record preserved

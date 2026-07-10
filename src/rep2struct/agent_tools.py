@@ -277,10 +277,11 @@ async def record_local_folds(args):
     rs = RunState(args["run_dir"])
     done = rs.read_stage("folds") if rs.stage_done("folds") else {}
     found = scan_recorded_folds(args["run_dir"], args.get("tool", "protenix"))
-    done.update(found)
+    added = {cid: rec for cid, rec in found.items() if cid not in done}
+    done.update(added)
     rs.write_stage("folds", done)
-    r = _txt(f"recorded {len(found)} clonotypes from disk: {sorted(found)}")
-    r["structuredContent"] = {"recorded": len(found), "clonotypes": sorted(found)}
+    r = _txt(f"recorded {len(added)} clonotypes from disk: {sorted(added)}")
+    r["structuredContent"] = {"recorded": len(added), "clonotypes": sorted(added)}
     return r
 
 
