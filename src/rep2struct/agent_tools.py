@@ -48,6 +48,28 @@ def _scramble_null(cognate_score_path):
         return None
 
 
+def scan_recorded_folds(run_dir, tool="protenix"):
+    """Find fold outputs already on disk under <run_dir>/out and group them per clonotype.
+    Protenix marks the construct in the DIRECTORY ({cid}_cognate / {cid}_scramble), not the
+    filename, so parse the cid from the top-level out/ dir. Resume path: the local_gpu bash
+    route wrote CIFs here directly, and a Colab download unzipped here has the same layout."""
+    out = Path(run_dir) / "out"
+    found = {}
+    if not out.exists():
+        return found
+    for d in sorted(out.iterdir()):
+        if not d.is_dir():
+            continue
+        for suffix in ("_cognate", "_scramble"):
+            if d.name.endswith(suffix):
+                cid = d.name[: -len(suffix)]
+                cifs = sorted(str(p) for p in d.rglob("*.cif"))
+                if cifs:
+                    found.setdefault(cid, {"paths": [], "tool": tool})
+                    found[cid]["paths"].extend(cifs)
+    return found
+
+
 def _load(rd, name, cls):
     rs = RunState(rd)
     return [cls(**d) for d in rs.read_stage(name)] if rs.stage_done(name) else []
@@ -247,6 +269,21 @@ async def record_fold_result(args):
     return _txt(f"recorded {len(args['model_paths'])} models for {args['clonotype_id']} via {args.get('tool', 'protenix')}")
 
 
+@tool("record_local_folds",
+      "Scan <run_dir>/out for fold CIFs already on disk (local_gpu run, or a Colab download "
+      "unzipped there) and record them per clonotype so QC can proceed.",
+      {"run_dir": str, "tool": str})
+async def record_local_folds(args):
+    rs = RunState(args["run_dir"])
+    done = rs.read_stage("folds") if rs.stage_done("folds") else {}
+    found = scan_recorded_folds(args["run_dir"], args.get("tool", "protenix"))
+    done.update(found)
+    rs.write_stage("folds", done)
+    r = _txt(f"recorded {len(found)} clonotypes from disk: {sorted(found)}")
+    r["structuredContent"] = {"recorded": len(found), "clonotypes": sorted(found)}
+    return r
+
+
 @tool("qc_structure", "Score a fold (per-group threshold) and return a skeptical verdict; output-type aware.",
       {"run_dir": str, "clonotype_id": str, "scramble_threshold": float,
        "output_type": str, "tool": str})
@@ -359,5 +396,5 @@ def build_server():
     return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
         ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
         list_structure_tools, build_fold_notebook, build_fold_artifact, record_fold_result,
-        qc_structure, render_final_report,
+        record_local_folds, qc_structure, render_final_report,
     ])
