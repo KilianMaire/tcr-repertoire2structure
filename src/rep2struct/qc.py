@@ -20,6 +20,37 @@ def load_chains(cif_path):
     return _heavy_by_chain(cif_path)
 
 
+_THREE_TO_ONE = {
+    "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C", "GLN": "Q",
+    "GLU": "E", "GLY": "G", "HIS": "H", "ILE": "I", "LEU": "L", "LYS": "K",
+    "MET": "M", "PHE": "F", "PRO": "P", "SER": "S", "THR": "T", "TRP": "W",
+    "TYR": "Y", "VAL": "V",
+}
+
+
+def _cdr3b_beta_atoms(cif_path, cdr3b):
+    """Heavy atoms of the chain-B residues that spell the CDR3beta loop, located by
+    matching the cdr3b one-letter sequence against chain B's residues (same approach
+    as model_cdr3b_plddt). Returns an (N,3) array, or None if cdr3b is not found in
+    chain B (caller must treat None as unmapped, never silently fall back to the whole
+    chain, or the metric would mix two definitions)."""
+    from Bio.PDB import MMCIFParser
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        m = next(MMCIFParser(QUIET=True).get_structure("x", str(cif_path)).get_models())
+    chb = next((c for c in m if c.id == "B"), None)
+    if chb is None:
+        return None
+    res = list(chb)
+    seq = "".join(_THREE_TO_ONE.get(r.resname, "X") for r in res)
+    i = seq.find(cdr3b)
+    if i < 0:
+        return None
+    sel = res[i:i + len(cdr3b)]
+    atoms = [a.coord for r in sel for a in r if a.element != "H"]
+    return np.array(atoms) if atoms else None
+
+
 def common_checks(chains: dict, expected: set) -> dict:
     issues = []
     missing = expected - set(chains)
@@ -44,8 +75,13 @@ def common_checks(chains: dict, expected: set) -> dict:
     return {"ok": not issues, "issues": issues, "n_chains": len(chains),
             "has_peptide": has_peptide, "min_interatomic": min_inter}
 
-def ensemble_contact(paths):
-    """MEDIAN CDR3(Vbeta)-peptide contact across all Protenix samples of one construct.
+def ensemble_contact(paths, cdr3b=None):
+    """MEDIAN beta-peptide heavy-atom contact across all Protenix samples of one
+    construct. With cdr3b given, contact is restricted to the CDR3beta loop residues
+    (the specificity-determining loop, and the only part of chain B that reaches the
+    peptide: a live profile of a real fold put 47 of 48 peptide contacts in CDR3beta);
+    without it, the whole beta V-domain is used (CDR3beta-dominated but not identical).
+    Pass cdr3b whenever the claim is literally "CDR3beta-peptide contact".
 
     Protenix emits several samples per seed whose docking pose varies wildly (MSA-free
     especially), so a single sample is not representative. The MEDIAN, not the mean, is
@@ -53,20 +89,27 @@ def ensemble_contact(paths):
     degenerate sample. Learned from the first live fold, where one scramble sample with
     591 spurious contacts (vs 0 in the other four) dominated the mean and inverted the
     cognate-vs-scramble verdict. Skips any model that does not parse to a full 5-chain
-    TCR-pMHC. Returns (median|None, n_models, n_valid)."""
+    TCR-pMHC (and, when cdr3b is given, any model whose CDR3beta cannot be located).
+    Returns (median|None, n_models, n_valid)."""
     paths = list(paths)
-    vals = [v for v in (score_model(p).get("cdr3_pep_atoms") for p in paths) if v is not None]
+    vals = [v for v in (score_model(p, cdr3b).get("cdr3_pep_atoms") for p in paths) if v is not None]
     if not vals:
         return None, len(paths), 0
     return float(np.median(vals)), len(paths), len(vals)
 
 
-def score_model(cif_path) -> dict:
+def score_model(cif_path, cdr3b=None) -> dict:
     chains = _heavy_by_chain(cif_path)
     if not {"A", "B", "C", "D", "E"}.issubset(chains):
         return {"n_chains": len(chains), "cdr3_pep_atoms": None, "crossing_angle": None, "dockq": None}
     pep = chains["E"]
-    beta = chains["B"]
+    if cdr3b:
+        beta = _cdr3b_beta_atoms(cif_path, cdr3b)
+        if beta is None:  # CDR3beta not locatable -> loud None, never silently use whole chain
+            return {"n_chains": len(chains), "cdr3_pep_atoms": None, "crossing_angle": None,
+                    "dockq": None, "cdr3b_unmapped": True}
+    else:
+        beta = chains["B"]
     d = np.sqrt(((beta[:, None, :] - pep[None, :, :]) ** 2).sum(-1))
     cdr3_pep_atoms = float((d < 4.5).sum())
     return {"n_chains": len(chains), "cdr3_pep_atoms": cdr3_pep_atoms,

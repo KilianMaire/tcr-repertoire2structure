@@ -68,7 +68,7 @@ def test_evaluate_stratifies_and_scores(tmp_path):
                       "decoys": ["NLVPMVATV"],
                       "epitopes": {"GILGFVFTL": "", "NLVPMVATV": "", "__scramble__": ""},
                       "novel": True, "tcrdist": None, "samples": 1,
-                      "cdr3b": "CASS", "chain_b_seq": "XXCASSXX"}}
+                      "cdr3b": "AAAA", "chain_b_seq": "AAAA"}}
     anns = [Annotation(cid, False, "unannotatable", tcrdist=None)]
     out = bm2.evaluate(manifest, tmp_path / "folds", anns)
     assert out["novel"]["n"] == 1

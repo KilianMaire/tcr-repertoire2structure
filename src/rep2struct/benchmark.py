@@ -56,8 +56,8 @@ def build_panel_constructs(clonotype, cognate, hla, decoys, tcr_seqs, mhc_seqs, 
         jobs[key] = build_construct(clonotype, ann, tcr_seqs, mhc_seqs)
     return jobs
 
-def contact_by_epitope(paths_by_epitope):
-    return {ep: ensemble_contact(paths)[0] for ep, paths in paths_by_epitope.items()}
+def contact_by_epitope(paths_by_epitope, cdr3b=None):
+    return {ep: ensemble_contact(paths, cdr3b)[0] for ep, paths in paths_by_epitope.items()}
 
 def retrieval_result(contacts, cognate):
     # exclude the scramble key from retrieval; it is a separate contrast
@@ -205,7 +205,7 @@ def evaluate(manifest, folds_root, annotations):
     per = {}
     for cid, ent in manifest.items():
         pbe = _paths_by_epitope(ent, folds_root, cid)
-        contacts = contact_by_epitope(pbe)
+        contacts = contact_by_epitope(pbe, ent.get("cdr3b"))
         cog = ent["cognate"]
         if contacts.get(cog) is None:
             continue
