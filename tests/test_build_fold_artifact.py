@@ -1,7 +1,8 @@
 import asyncio
 from pathlib import Path
 
-from rep2struct import agent_tools
+from rep2struct import agent_tools, intake
+from rep2struct.intake import IntakeSpec
 from rep2struct.runstate import RunState
 
 
@@ -38,6 +39,16 @@ def test_local_gpu_route_writes_a_bash_script(tmp_path):
     body = Path(sc["artifact_path"]).read_text()
     assert body.startswith("#!/usr/bin/env bash")
     assert "protenix pred" in body
+
+
+def test_local_gpu_route_uses_working_path_from_intake(tmp_path):
+    rd = str(tmp_path); _seed_job(rd)
+    intake.save_intake(rd, IntakeSpec("10x_vdj", "/data/c.csv", "which epitope?",
+                                      "local_gpu", {"working_path": "/scratch/h100run"}))
+    r = _call(rd, "local_gpu")
+    sc = r["structuredContent"]
+    body = Path(sc["artifact_path"]).read_text()
+    assert 'cd "/scratch/h100run"' in body
 
 
 def test_unwired_ssh_route_still_scripts_but_flags_not_wired(tmp_path):

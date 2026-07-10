@@ -12,6 +12,7 @@ from .report import render_report
 from .schema import Clonotype, Annotation, QCResult
 from . import structure_tools
 from . import compute_routes
+from . import intake
 from .grouping import partition
 from .msa import build_msa
 
@@ -255,7 +256,8 @@ async def build_fold_artifact(args):
         out = nb_dir / f"{cid}_{tool}.ipynb"
         out.write_text(_json.dumps(nb, indent=1))
     else:  # bash_script (local_gpu, and the honest ssh/server handoff)
-        working = job.get("working_path") or "."
+        spec = intake.load_intake(args["run_dir"])
+        working = (spec.route_params.get("working_path") if spec else None) or "."
         script = build_script(inputs, working_path=working)
         sc_dir = Path(args["run_dir"]) / "scripts"
         sc_dir.mkdir(parents=True, exist_ok=True)
@@ -372,6 +374,21 @@ async def qc_structure(args):
     return r
 
 
+@tool("record_intake",
+      "Persist the intake brief (data type, input path, question, compute route, route params) "
+      "to run_dir/intake.json so the run can proceed and later resume. Secrets are stripped.",
+      {"run_dir": str, "data_type": str, "input_path": str, "question": str,
+       "compute_route": str, "route_params": dict})
+async def record_intake(args):
+    from .intake import IntakeSpec
+    spec = IntakeSpec(args["data_type"], args["input_path"], args["question"],
+                      args["compute_route"], args.get("route_params", {}))
+    path = intake.save_intake(args["run_dir"], spec)
+    r = _txt(f"intake recorded to {path}")
+    r["structuredContent"] = {"intake_path": path, "compute_route": spec.compute_route}
+    return r
+
+
 @tool("render_final_report", "Render the self contained HTML report for the run.",
       {"run_dir": str})
 async def render_final_report(args):
@@ -407,5 +424,5 @@ def build_server():
     return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
         ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
         list_structure_tools, list_compute_routes, build_fold_notebook, build_fold_artifact, record_fold_result,
-        record_local_folds, qc_structure, render_final_report,
+        record_local_folds, qc_structure, render_final_report, record_intake,
     ])

@@ -87,9 +87,11 @@ def build_agents(mode="auto"):
                 "first and a password only as a last resort, remote_path). If the user does "
                 "not know, propose the default route (Colab), the simplest option. Never "
                 "write a password anywhere. When you have all four, summarize the brief back "
-                "and confirm before the run proceeds."),
+                "and confirm before the run proceeds. When you have all four answers, call "
+                "record_intake to persist the brief, then confirm before the run proceeds."),
             tools=["mcp__rep2struct__list_compute_routes",
-                   "mcp__rep2struct__ingest_repertoire", "Agent"],
+                   "mcp__rep2struct__ingest_repertoire",
+                   "mcp__rep2struct__record_intake", "Agent"],
             model="opus",
         ),
         "structure-strategist": AgentDefinition(
@@ -144,6 +146,7 @@ def build_options(run_dir, mode="auto"):
         "mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__list_compute_routes",
         "mcp__rep2struct__record_fold_result", "mcp__rep2struct__record_local_folds",
         "mcp__rep2struct__qc_structure", "mcp__rep2struct__render_final_report",
+        "mcp__rep2struct__record_intake",
     ]
     if mode == "handoff":
         allowed = base + ["mcp__rep2struct__build_fold_artifact"]

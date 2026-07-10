@@ -20,7 +20,7 @@ def build(inputs: dict, working_path: str = ".") -> str:
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        f"cd {working_path}",
+        f'cd "{working_path}"',
         "pip install -q protenix",
         "mkdir -p inputs out",
         "python - <<'PY'",

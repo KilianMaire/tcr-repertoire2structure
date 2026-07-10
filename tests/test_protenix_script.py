@@ -26,3 +26,8 @@ def test_script_is_bash_and_writes_inputs_and_folds():
 def test_embeds_input_json_so_no_external_files_needed():
     s = protenix_script.build(_inputs())
     assert "GILGFVFTL" in s  # the peptide from the embedded record
+
+
+def test_working_path_with_space_stays_intact_when_quoted():
+    s = protenix_script.build(_inputs(), working_path="/scratch/my run")
+    assert 'cd "/scratch/my run"' in s
