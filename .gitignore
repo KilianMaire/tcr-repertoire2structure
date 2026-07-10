@@ -5,6 +5,8 @@ __pycache__/
 .DS_Store
 runs/
 data/raw/
+data/dataset/
+Data/
 
 *.h5ad
 
