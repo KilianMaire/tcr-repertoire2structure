@@ -60,13 +60,23 @@ def median_per_epitope(cid, ent, folds_root, fn):
     return out
 
 
-def load_panel(run_dir, fn):
+def _is_stub(chain_b_seq):
+    """A poly-G stub TCR (ten glycines + CDR3) means germline reconstruction
+    failed; its TCR-peptide interface readouts are uninformative."""
+    return bool(chain_b_seq) and chain_b_seq.startswith("G" * 10)
+
+
+def load_panel(run_dir, fn, reconstructed_only=False):
     """Return list of dicts: {tcr, cognate, values: {ep: median}} for TCRs whose
-    cognate was scored."""
+    cognate was scored. With reconstructed_only, drop clonotypes that were folded
+    with a poly-G stub instead of a real V domain (the canonical setting for any
+    TCR-interface analysis; default False preserves the frozen full-panel numbers)."""
     manifest = json.loads((Path(run_dir) / "manifest.json").read_text())
     folds_root = Path(run_dir) / "folds"
     rows = []
     for cid, ent in manifest.items():
+        if reconstructed_only and _is_stub(ent.get("chain_b_seq", "")):
+            continue
         vals = median_per_epitope(cid, ent, folds_root, fn)
         if ent["cognate"] in vals and len(vals) >= 2:
             rows.append({"tcr": cid, "cognate": ent["cognate"], "values": vals})

@@ -19,12 +19,13 @@ import matplotlib.pyplot as plt
 
 C_A0201, C_A1101 = "#0072B2", "#D55E00"
 SURFACE = "#FCFCFB"
-RUNS = [("A*02:01 (n=48)", "runs/panel1", C_A0201),
-        ("A*11:01 (n=24)", "runs/hla_a1101", C_A1101)]
+RUNS = [("A*02:01 (n=29)", "runs/panel1", C_A0201),
+        ("A*11:01 (n=18)", "runs/hla_a1101", C_A1101)]
 
 
 def main(out_path="docs/mhc_peptide_presentation.png"):
-    scored = {label: {m: summarize(run_dir, fn) for m, fn in METRICS.items()}
+    scored = {label: {m: summarize(run_dir, fn, reconstructed_only=True)
+                      for m, fn in METRICS.items()}
               for label, run_dir, _ in RUNS}
     # order metrics by mean AUROC across the two runs, best at top
     order = sorted(METRICS, key=lambda m: -sum(scored[l][m]["auroc"] for l, _, _ in RUNS))

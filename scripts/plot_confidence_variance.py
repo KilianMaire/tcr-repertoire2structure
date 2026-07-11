@@ -41,7 +41,8 @@ CONDS = [
 def gather():
     rows_out = []
     for label, run_dir, readout in CONDS:
-        rows = load_panel(run_dir, READOUTS[readout])
+        # reconstructed TCRs only: poly-G stub folds carry no TCR-interface signal
+        rows = load_panel(run_dir, READOUTS[readout], reconstructed_only=True)
         vd = variance_decomposition(rows)
         ce = cognate_effect(rows)
         resid = max(0.0, 1 - vd["tcr"] - vd["cognate_within_tcr"] - vd["peptide_within_tcr"])
@@ -110,7 +111,10 @@ def main(out_path="docs/confidence_variance.png"):
 
     fig.suptitle("Structural confidence separates TCRs, not epitopes",
                  fontsize=13, fontweight="bold", x=0.5)
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    ns = ", ".join(f"{d['label'].splitlines()[0]} n={d['ce']['n']}" for d in data[:2])
+    fig.text(0.5, 0.005, f"reconstructed TCRs only (poly-G stub folds excluded); {ns}",
+             ha="center", fontsize=7.5, color="#777777")
+    fig.tight_layout(rect=[0, 0.03, 1, 0.96])
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, facecolor=SURFACE)
     print(f"wrote {out_path}")

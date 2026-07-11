@@ -43,12 +43,16 @@ def _median(cid, ep, folds_root, fn):
     return st.median(vals) if vals else None
 
 
-def collect(run_dir, fn):
-    """Per TCR: (cognate_median, scramble_median, [decoy_medians])."""
+def collect(run_dir, fn, reconstructed_only=False):
+    """Per TCR: (cognate_median, scramble_median, [decoy_medians]). With
+    reconstructed_only, drop poly-G stub clonotypes (presentation is groove-based
+    and barely changes, but this keeps the panel consistent with the TCR arm)."""
     manifest = json.loads((Path(run_dir) / "manifest.json").read_text())
     folds_root = Path(run_dir) / "folds"
     rows = []
     for cid, ent in manifest.items():
+        if reconstructed_only and ent.get("chain_b_seq", "").startswith("G" * 10):
+            continue
         cog = _median(cid, ent["cognate"], folds_root, fn)
         scr = _median(cid, "__scramble__", folds_root, fn)
         if cog is None or scr is None:
@@ -81,8 +85,8 @@ def _boot_ci(sample_fn, seed=0, nb=2000):
     return vals[int(0.025 * len(vals))], vals[int(0.975 * len(vals))]
 
 
-def summarize(run_dir, fn):
-    rows = collect(run_dir, fn)
+def summarize(run_dir, fn, reconstructed_only=False):
+    rows = collect(run_dir, fn, reconstructed_only=reconstructed_only)
     deltas = [cog - scr for (cog, scr, _) in rows]
     dec_deltas = [d - scr for (_, scr, dec) in rows for d in dec]
     au = auroc_binder_vs_scramble(rows)

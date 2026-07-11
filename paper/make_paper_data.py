@@ -91,32 +91,41 @@ def validation_tables():
              d["n_leakage_suspected"] / d["n_labeled_clonotypes"]]])
 
 
+def _is_stub(seq):
+    return bool(seq) and seq.startswith("G" * 10)
+
+
 def tcr_tables():
     ret_rows, var_rows = [], []
     for run, hla, run_dir in RUNS:
         manifest = json.loads((run_dir / "manifest.json").read_text())
         folds = run_dir / "folds"
-        # retrieval Top-1 for the full battery
-        for readout, fn in BATTERY.items():
-            panels = []
-            for cid, ent in manifest.items():
-                pe = _median_per_ep(cid, ent, folds, fn)
-                if ent["cognate"] in pe:
-                    panels.append((pe, ent["cognate"]))
-            hits, won = _top1(panels)
-            ret_rows.append([run, hla, readout, round(hits / won, 4) if won else "", won])
-        # variance decomposition for the three interpretable readouts
+        # retrieval Top-1 for the full battery, both panels: "all" is the frozen
+        # pre-registered panel; "reconstructed" is the canonical (stub-free) panel.
+        for mode in ("all", "reconstructed"):
+            for readout, fn in BATTERY.items():
+                panels = []
+                for cid, ent in manifest.items():
+                    if mode == "reconstructed" and _is_stub(ent.get("chain_b_seq", "")):
+                        continue
+                    pe = _median_per_ep(cid, ent, folds, fn)
+                    if ent["cognate"] in pe:
+                        panels.append((pe, ent["cognate"]))
+                hits, won = _top1(panels)
+                ret_rows.append([run, hla, mode, readout,
+                                 round(hits / won, 4) if won else "", won])
+        # variance decomposition, reconstructed TCRs only (canonical)
         for readout in ("iptm_TCRpep_max", "iptm_beta_pep", "iptm_groove_ctrl"):
-            rows = load_panel(run_dir, BATTERY[readout])
+            rows = load_panel(run_dir, BATTERY[readout], reconstructed_only=True)
             vd = variance_decomposition(rows)
             ce = cognate_effect(rows)
-            var_rows.append([run, hla, readout, round(icc(rows), 4),
+            var_rows.append([run, hla, readout, ce["n"], round(icc(rows), 4),
                              round(vd["tcr"], 4), round(vd["cognate_within_tcr"], 4),
                              round(vd["peptide_within_tcr"], 4), round(ce["mean_delta"], 4),
                              round(ce["ci"][0], 4), round(ce["ci"][1], 4), round(ce["perm_p"], 4)])
-    _write("tcr_retrieval_top1.csv", ["run", "hla", "readout", "top1", "n_tcr"], ret_rows)
+    _write("tcr_retrieval_top1.csv", ["run", "hla", "panel", "readout", "top1", "n_tcr"], ret_rows)
     _write("confidence_variance.csv",
-           ["run", "hla", "readout", "icc", "var_tcr", "var_cognate", "var_peptide",
+           ["run", "hla", "readout", "n_tcr", "icc", "var_tcr", "var_cognate", "var_peptide",
             "cognate_delta", "delta_ci_lo", "delta_ci_hi", "perm_p"], var_rows)
 
 
@@ -124,7 +133,7 @@ def mhc_tables():
     rows = []
     for run, hla, run_dir in RUNS:
         for metric, fn in MHC_METRICS.items():
-            s = summarize(run_dir, fn)
+            s = summarize(run_dir, fn, reconstructed_only=True)
             rows.append([run, hla, metric, round(s["frac_cog_gt_scr"], 3),
                          round(s["frac_dec_gt_scr"], 3), round(s["delta"], 4),
                          round(s["delta_ci"][0], 4), round(s["delta_ci"][1], 4),

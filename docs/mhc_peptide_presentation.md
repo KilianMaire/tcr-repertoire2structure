@@ -30,18 +30,19 @@ and `python scripts/plot_mhc_scramble.py`.
 
 ## Results
 
-AUROC for separating a genuine binder from its composition-scramble
-(`docs/mhc_peptide_presentation.png`):
+AUROC for separating a genuine binder from its composition-scramble, reconstructed
+TCRs only (`docs/mhc_peptide_presentation.png`; groove metrics do not touch the TCR
+chains, so excluding the poly-G stubs barely moves them):
 
 | metric | what it measures | A*02:01 AUROC | A*11:01 AUROC |
 | --- | --- | --- | --- |
-| neg_gpde_groove | MHC-peptide interface PAE (negated) | 0.77 [0.72, 0.82] | 0.98 [0.95, 1.00] |
-| iptm_b2m_pep | b2m-peptide ipTM | 0.74 [0.66, 0.81] | 0.97 [0.93, 1.00] |
-| iptm_groove | MHC-peptide interface ipTM | 0.71 [0.64, 0.78] | 0.99 [0.97, 1.00] |
-| pep_plddt | peptide chain pLDDT | 0.69 [0.62, 0.76] | 0.88 [0.79, 0.96] |
-| pep_ptm | peptide chain pTM | 0.69 [0.64, 0.75] | 0.88 [0.79, 0.95] |
-| pep_iptm | peptide interface pTM (whole complex) | 0.50 [0.46, 0.54] | 0.62 [0.55, 0.71] |
-| ranking_score | Protenix global ranking | 0.46 [0.42, 0.50] | 0.51 [0.43, 0.60] |
+| iptm_groove | MHC-peptide interface ipTM | 0.77 [0.69, 0.86] | 0.99 [0.97, 1.00] |
+| neg_gpde_groove | MHC-peptide interface PAE (negated) | 0.82 [0.74, 0.89] | 1.00 [0.98, 1.00] |
+| iptm_b2m_pep | b2m-peptide ipTM | 0.79 [0.70, 0.88] | 0.99 [0.96, 1.00] |
+| pep_plddt | peptide chain pLDDT | 0.72 [0.64, 0.80] | 0.88 [0.78, 0.98] |
+| pep_ptm | peptide chain pTM | 0.75 [0.67, 0.83] | 0.88 [0.80, 0.94] |
+| pep_iptm | peptide interface pTM (whole complex) | 0.52 [0.47, 0.58] | 0.64 [0.52, 0.75] |
+| ranking_score | Protenix global ranking | 0.47 [0.43, 0.51] | 0.54 [0.41, 0.68] |
 
 ## What the numbers say
 
@@ -53,9 +54,10 @@ AUROC for separating a genuine binder from its composition-scramble
 
 2. The cleanest single metric is the groove interface confidence: `iptm_groove`
    (the MHC-peptide ipTM) or `neg_gpde_groove` (its PAE). Peptide chain pLDDT and
-   pTM work but are weaker. Two metrics are useless here: `pep_iptm` and
-   `ranking_score` sit at chance, so a good global ranking score does not imply a
-   presented peptide.
+   pTM work but are weaker. `ranking_score` sits at chance (a good global ranking
+   score does not imply a presented peptide), and `pep_iptm` is at chance on
+   A*02:01 (0.52) and only weakly informative on A*11:01 (0.64, CI touching 0.5),
+   so neither is a reliable presentation filter.
 
 3. The HLA gap is permissiveness at the scoring level, not anchor loss in the
    scramble. We first guessed the scramble simply destroys the anchor more often
