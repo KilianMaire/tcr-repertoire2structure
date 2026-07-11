@@ -12,7 +12,7 @@ A researcher hands the pipeline a 10x contig CSV. Claude agents return a report 
 
 The chain: ingest and clonotype curation, honest specificity annotation (TCRdist against labeled references), fold prep and MSA, structure folding (Protenix on Colab, driven through the Playwright MCP), skeptical QC, and a self contained HTML report.
 
-## Two honesty rules, enforced in the output schema
+## Two honesty rules, enforced in the annotation and QC logic
 
 1. Specificity is annotation by similarity, never prediction. A clonotype is annotated only when a TCRdist neighbor is close enough, always with the distance and a confidence tier. Clonotypes with no close neighbor are flagged unannotatable. No label is ever forced.
 2. A predicted structure does not confirm specificity. Protenix imposes canonical TCR pMHC docking geometry even on non binding sequences, so the QC step is a skeptical judge that flags a fold as suspect when its CDR3 to peptide contact does not beat the scramble control calibration.

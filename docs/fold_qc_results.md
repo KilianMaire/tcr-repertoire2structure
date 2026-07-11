@@ -13,7 +13,15 @@ pose varies substantially between samples of one fold.
 | 98b9ddcabb19 | NQKLIANQF, EBV (B\*15:01) | 48 | 14 | reliable |
 | d952b775645a | CTELKLSDY, EBV (A\*01:01) | 145 | 109 | reliable (weak) |
 
-Mean Vbeta to peptide heavy-atom contacts across 5 samples per construct.
+Vbeta to peptide heavy-atom contacts across 5 samples per construct. Note: the
+shipped QC (`ensemble_contact` in `qc.py`) summarises the sample ensemble by the
+MEDIAN, not the mean, because a lone degenerate pose can dominate a mean and
+invert the cognate-vs-scramble verdict (this exact failure is documented in the
+function). Read this table as the per-construct median; the marginal case
+`d952b775645a` (145 vs scramble 109) carries a plain "reliable" verdict from the
+code (there is no "weak" tier; "reliable (weak)" above is a human annotation of a
+thin margin). These three TABLO folds are an early arm and are not in the
+committed `runs/`; regenerate with `qc_folds.py` to reproduce exact values.
 
 ## The scramble control is the point
 

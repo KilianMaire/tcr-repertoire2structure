@@ -44,7 +44,7 @@ class FoldJob:
 @dataclass
 class QCResult:
     clonotype_id: str
-    qc_verdict: str              # reliable, suspect, qc_failed, presented, not_presented
+    qc_verdict: str              # reliable, suspect, qc_failed, presented, not_presented, pose_only, pose_failed
     reason: str
     dockq: Optional[float] = None
     cdr3_pep_atoms: Optional[float] = None

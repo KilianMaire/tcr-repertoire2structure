@@ -8,7 +8,10 @@ agreed on (dominant call). 3,325 clonotypes carried a ground truth label.
 
 ## Headline
 
-The annotation is honest and it holds up, once leakage is removed.
+The annotation is honest: its precision holds up once leakage is removed, at a
+deliberately low recall (it abstains rather than guess). The de-leaked precision
+rests on a small number of predictions (151 of 193), so read it as a point
+estimate with wide confidence, not a tight number.
 
 | metric | raw | leakage removed |
 | --- | --- | --- |
@@ -32,8 +35,9 @@ matches gives the honest number: precision 0.78 on genuinely novel TCRs.
    about 8 times out of 10 (0.78 de-leaked, 0.89 raw).
 2. Most novel TCRs have no close neighbour, so recall is low (0.08 de-leaked).
    This is not a failure of the tool; it is why Honesty Rule 1 exists. Ninety
-   percent of novel clonotypes are correctly left unannotatable rather than
-   forced into a wrong label.
+   percent of novel clonotypes are left unannotatable rather than forced into a
+   label the reference cannot support. These are recall misses the tool abstains
+   on, not cases proven to have no answer; abstaining beats guessing here.
 3. The confidence tiers hold. De-leaked precision stays near 0.8 from the tight
    cut out to distance 48, then degrades (0.74 at 60, 0.58 at 90):
 

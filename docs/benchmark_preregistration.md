@@ -48,5 +48,25 @@ optimistic point estimate. The test below is what licenses claiming it.
 
 Scoring uses the frozen `render_report` in `scripts/run_benchmark_arm.py`; it
 prints every readout, but the confirmatory claim reads only the three
-pre-committed metrics and the control named above. A 2-of-3 (primary +
-control) pass is the bar; secondaries are supporting, not gating.
+pre-committed metrics and the control named above. The bar is the primary AND the
+control together (both must pass); secondaries are supporting, not gating.
+
+## Result (2026-07-11): confirmation NOT licensed
+
+The primary **FAILS**: `iptm_TCRpep_max` reached Top-1 0.583 with label-permutation
+p = 0.34, which does not clear the pre-committed p < 0.05. The control passes
+(`iptm_groove_ctrl` 0.500, does not exceed chance) and the contact refutation
+replicates (0.375), but the one prediction that would license the positive claim
+did not pass, so the confirmation is not licensed and we do not claim structural
+confidence retrieves the epitope. The held-out best of the battery
+(`neg_gpde_beta_pep`, 0.667, p 0.10) is not claimed either, since re-selecting is
+the HARKing this pre-registration exists to prevent.
+
+Two follow-ups, both outside the frozen test and neither of which changes the
+verdict. First, a post-hoc data-quality reanalysis excluding poly-G stub folds
+(see `paper/data/stub_contamination.csv`) raises the held-out effect to p 0.09,
+still short of 0.05. Second, an audit showed the label-permutation p and the
+TCR-blind null are miscalibrated on the discovery panel (they assign p near 1e-4
+even to the negative control); the correct test is an exact binomial against naive
+per-panel chance, under which the discovery signal is real but the held-out
+primary still does not confirm.
