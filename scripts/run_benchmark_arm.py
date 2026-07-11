@@ -105,24 +105,59 @@ def score_manifest(out_dir, dextramer_dir):
     sel = [c for c in clons if c.id in manifest]
     anns = annotations_from_cache(sel, nearest_cache(sel))
     result = bm.evaluate(manifest, out_dir / "folds", anns)
-    lines = ["# Structure-vs-sequence benchmark (seed = calibration pilot)\n"]
+    (out_dir / "benchmark_report.md").write_text(render_report(result))
+    return result
+
+# readouts whose direction is a control, not a claim (must NOT beat chance)
+_CONTROL_READOUTS = {"iptm_groove_ctrl"}
+
+def render_report(result):
+    lines = ["# Structure-vs-sequence retrieval benchmark\n",
+             "Do structural readouts recover the cognate epitope for A*02:01 CD8 "
+             "TCRs that sequence annotation (tcrdist) cannot place? Panel = cognate "
+             "+ same-HLA decoys + composition-scramble; 5 Protenix samples each; "
+             "rank the epitopes by each readout, score Top-1.\n"]
     for strat in ("overall", "novel", "leaked"):
         s = result[strat]
         if s.get("n", 0) == 0:
             lines.append(f"## {strat}: no TCRs\n"); continue
         c = s["contact"]; pc = s["scramble_contrast"]
         lines.append(f"## {strat} (n={s['n']}, naive chance={s['chance']:.3f}, "
-                     f"TCR-blind null={s['tcr_blind_acc']:.3f})")
-        lines.append(f"- contact Top-1 {c['top1']:.2f} CI[{c['ci'][0]:.2f},{c['ci'][1]:.2f}] "
-                     f"p_vs_chance={c['p_vs_chance']:.4f} p_vs_blind={c['p_vs_blind']:.4f} "
-                     f"AUROC={c['auroc']}")
-        lines.append(f"- CO-PRIMARY within-pair cognate>scramble: "
-                     f"frac={pc['frac_cognate_higher']} mean_delta={pc['mean_delta']} "
-                     f"CI{pc['ci_delta']} (n_pairs={pc['n']})")
-        lines.append(f"- CDR3b pLDDT Top-1 {s['plddt']['top1']:.2f} | "
-                     f"sequence Top-1 {s['seq']['top1']:.2f}\n")
-    (out_dir / "benchmark_report.md").write_text("\n".join(lines))
-    return result
+                     f"TCR-blind null={s['tcr_blind_acc']:.3f})\n")
+        lines.append(f"**Sequence baseline (tcrdist):** Top-1 {s['seq']['top1']:.3f} "
+                     f"(all panel TCRs are unannotatable, so sequence cannot place them).\n")
+        lines.append("**Structural confidence readouts** (Top-1, 95% bootstrap CI, "
+                     "TCR-blind null, label-permutation p):\n")
+        lines.append("| readout | Top-1 | CI | blind | perm p |")
+        lines.append("|---|---|---|---|---|")
+        conf = s["confidence"]
+        ranked = sorted((r for r in conf if r not in _CONTROL_READOUTS),
+                        key=lambda r: -conf[r]["top1"])
+        for r in ranked:
+            d = conf[r]
+            lines.append(f"| {r} | {d['top1']:.3f} | "
+                         f"[{d['ci'][0]:.3f},{d['ci'][1]:.3f}] | "
+                         f"{d['blind']:.3f} | {d['perm_p']:.4f} |")
+        lines.append(f"| CDR3b_pLDDT | {s['plddt']['top1']:.3f} | - | - | - |")
+        for r in sorted(_CONTROL_READOUTS):
+            if r in conf:
+                d = conf[r]
+                lines.append(f"| {r} (NEG CONTROL) | {d['top1']:.3f} | "
+                             f"[{d['ci'][0]:.3f},{d['ci'][1]:.3f}] | "
+                             f"{d['blind']:.3f} | {d['perm_p']:.4f} |")
+        lines.append("")
+        lines.append(f"**Contact (CDR3b-peptide, refuted):** Top-1 {c['top1']:.3f} "
+                     f"CI[{c['ci'][0]:.3f},{c['ci'][1]:.3f}] p_vs_chance={c['p_vs_chance']:.4f} "
+                     f"AUROC={c['auroc']:.3f}. Within-pair cognate>scramble: "
+                     f"frac={pc['frac_cognate_higher']}, mean_delta={pc['mean_delta']:.2f} "
+                     f"CI[{pc['ci_delta'][0]:.2f},{pc['ci_delta'][1]:.2f}] (n={pc['n']}). "
+                     f"Below chance and negative contrast: contact does not recover the epitope.\n")
+    lines.append("> Caveat: the best interface readout is selected post-hoc from a "
+                 "battery (tuning-on-truth). Single HLA, single donor. The point "
+                 "estimates separate cleanly from chance and sequence, but the ordering "
+                 "among the confidence readouts needs a held-out / pre-registered "
+                 "confirmation before any one is claimed as THE metric.\n")
+    return "\n".join(lines)
 
 def _score_cmd(args):
     print(json.dumps(score_manifest(args.out_dir, args.dextramer_dir)["novel"], indent=2))

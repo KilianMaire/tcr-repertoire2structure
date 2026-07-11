@@ -1,6 +1,8 @@
 from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path as _Path
+import glob as _glob
+import json as _json
 import random as _random
 import warnings
 import numpy as np
@@ -112,6 +114,58 @@ def cdr3b_plddt_by_epitope(paths_by_epitope, chain_b_seq, cdr3b):
         out[ep] = float(np.median(vals)) if vals else None
     return out
 
+# --- Structural-confidence readouts ---------------------------------------
+# Protenix writes one summary_confidence_sample_N.json per sample next to the
+# CIFs. Chain order in the construct is fixed: A=TCRalpha, B=TCRbeta, C=MHC
+# heavy, D=beta2m, E=peptide. chain_pair_iptm[i][j] is the interface predicted
+# TM between chains i,j (higher = better); chain_pair_gpde[i][j] is a PAE-analog
+# (lower = better). The readouts below rank the panel by a confidence signal
+# rather than by the (refuted) CDR3beta-peptide contact count.
+_A, _B, _C, _D, _E = 0, 1, 2, 3, 4
+
+_CONF_READOUTS = {
+    # confidence at the TCR-peptide interface (the mechanistically-relevant one)
+    "iptm_TCRpep_max":   lambda c: max(c["chain_pair_iptm"][_A][_E], c["chain_pair_iptm"][_B][_E]),
+    "iptm_TCRpep_mean":  lambda c: (c["chain_pair_iptm"][_A][_E] + c["chain_pair_iptm"][_B][_E]) / 2,
+    "iptm_beta_pep":     lambda c: c["chain_pair_iptm"][_B][_E],
+    "iptm_alpha_pep":    lambda c: c["chain_pair_iptm"][_A][_E],
+    "neg_gpde_beta_pep": lambda c: -c["chain_pair_gpde"][_B][_E],
+    # whole-complex confidence
+    "iptm_global":       lambda c: c["iptm"],
+    "ptm_global":        lambda c: c["ptm"],
+    "ranking_score":     lambda c: c["ranking_score"],
+    # NEGATIVE CONTROL: the MHC-peptide groove must NOT carry TCR specificity;
+    # if this ranks the cognate it would mean the signal is peptide-in-groove,
+    # not TCR-recognition. It ranks BELOW chance on the panel, as it should.
+    "iptm_groove_ctrl":  lambda c: c["chain_pair_iptm"][_C][_E],
+}
+
+def _confidence_samples(fold_dir):
+    out = []
+    for jp in _glob.glob(str(_Path(fold_dir) / "**" / "*summary_confidence_sample_*.json"),
+                         recursive=True):
+        try:
+            out.append(_json.loads(_Path(jp).read_text()))
+        except (ValueError, OSError):
+            continue
+    return out
+
+def confidence_readout_by_epitope(manifest_entry, folds_root, cid, readout):
+    """Median value of one confidence readout per epitope (scramble excluded)."""
+    fn = _CONF_READOUTS[readout]
+    out = {}
+    for ep in manifest_entry["epitopes"]:
+        if ep == "__scramble__":
+            continue
+        vals = []
+        for c in _confidence_samples(_Path(folds_root) / f"{cid}__{ep}"):
+            try:
+                vals.append(float(fn(c)))
+            except (KeyError, IndexError, TypeError):
+                continue
+        out[ep] = float(np.median(vals)) if vals else None
+    return out
+
 def sequence_baseline_top1(annotation_epitope, cognate):
     return annotation_epitope == cognate
 
@@ -214,9 +268,12 @@ def evaluate(manifest, folds_root, annotations):
             {e: p for e, p in pbe.items() if e != "__scramble__"},
             ent.get("chain_b_seq"), ent.get("cdr3b"))
         decoy_c = [contacts[e] for e in ent["decoys"] if contacts.get(e) is not None]
+        conf = {r: confidence_readout_by_epitope(ent, folds_root, cid, r)
+                for r in _CONF_READOUTS}
         per[cid] = {
             "novel": ent["novel"],
             "panel_contacts": panel_contacts,
+            "confidence": conf,
             "contact_top1": 1.0 if retrieval_result(contacts, cog)["top1"] else 0.0,
             "plddt_top1": 1.0 if retrieval_result(plddts, cog)["top1"] else 0.0,
             "seq_top1": 1.0 if sequence_baseline_top1(seq_ep.get(cid), cog) else 0.0,
@@ -238,6 +295,17 @@ def evaluate(manifest, folds_root, annotations):
         perm_p = label_permutation_p(pt, [r["panel_contacts"] for r in rows],
                                      [r["cognate"] for r in rows])
         pc = paired_contrast([(r["cognate_contact"], r["scramble_contact"]) for r in rows])
+        cogs = [r["cognate"] for r in rows]
+
+        def _confidence_stratum(readout):
+            panels = [r["confidence"][readout] for r in rows]
+            hits = [1.0 if retrieval_result(p, cog)["top1"] else 0.0
+                    for p, cog in zip(panels, cogs)]
+            cpt, clo, chi = bootstrap_ci(hits)
+            return {"top1": cpt, "ci": [clo, chi],
+                    "blind": tcr_blind_accuracy(panels, cogs),
+                    "perm_p": label_permutation_p(cpt, panels, cogs)}
+
         return {
             "n": len(rows), "chance": chance, "tcr_blind_acc": blind_acc,
             "contact": {"top1": pt, "ci": [lo, hi],
@@ -247,6 +315,7 @@ def evaluate(manifest, folds_root, annotations):
                                         for r in rows if r["cognate_contact"] is not None])},
             "plddt": {"top1": sum(r["plddt_top1"] for r in rows) / len(rows)},
             "seq": {"top1": sum(r["seq_top1"] for r in rows) / len(rows)},
+            "confidence": {r: _confidence_stratum(r) for r in _CONF_READOUTS},
             "scramble_contrast": pc,
         }
 

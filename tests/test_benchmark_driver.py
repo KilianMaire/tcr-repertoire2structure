@@ -76,3 +76,31 @@ def test_evaluate_stratifies_and_scores(tmp_path):
     assert out["novel"]["tcr_blind_acc"] in (0.0, 1.0)
     assert out["novel"]["contact"]["top1"] in (0.0, 1.0)
     assert out["novel"]["seq"]["top1"] == 0.0
+    # confidence readouts are wired even when no summary_confidence JSONs exist:
+    # every readout resolves to a stratum (None panels -> Top-1 0.0), never a crash
+    conf = out["novel"]["confidence"]
+    assert "iptm_TCRpep_max" in conf and "iptm_groove_ctrl" in conf
+    assert conf["iptm_TCRpep_max"]["top1"] == 0.0
+
+
+def test_confidence_readout_reads_summary_json(tmp_path):
+    # A construct dir with two samples; iptm_TCRpep_max = max(iptm[A][E], iptm[B][E]).
+    # Median over the two samples must be the wired value; missing keys are skipped.
+    d = tmp_path / "folds" / "a__GILGFVFTL" / "seed0"
+    d.mkdir(parents=True)
+    def _cpi(ae, be, ce):
+        m = [[0.0] * 5 for _ in range(5)]
+        m[0][4] = ae; m[1][4] = be; m[2][4] = ce
+        return m
+    for i, (ae, be, ce) in enumerate([(0.3, 0.5, 0.1), (0.4, 0.6, 0.2)]):
+        (d / f"x_summary_confidence_sample_{i}.json").write_text(json.dumps(
+            {"chain_pair_iptm": _cpi(ae, be, ce),
+             "chain_pair_gpde": _cpi(1.0, 2.0, 3.0),
+             "iptm": 0.4, "ptm": 0.5, "ranking_score": 0.6}))
+    ent = {"epitopes": {"GILGFVFTL": "", "__scramble__": ""}}
+    vals = bm2.confidence_readout_by_epitope(ent, tmp_path / "folds", "a", "iptm_TCRpep_max")
+    assert "__scramble__" not in vals
+    # samples give max(0.3,0.5)=0.5 and max(0.4,0.6)=0.6 -> median 0.55
+    assert abs(vals["GILGFVFTL"] - 0.55) < 1e-9
+    groove = bm2.confidence_readout_by_epitope(ent, tmp_path / "folds", "a", "iptm_groove_ctrl")
+    assert abs(groove["GILGFVFTL"] - 0.15) < 1e-9  # median of 0.1, 0.2
