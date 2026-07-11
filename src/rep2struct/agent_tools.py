@@ -11,6 +11,8 @@ from .qc import score_model, verdict
 from .report import render_report
 from .schema import Clonotype, Annotation, QCResult
 from . import structure_tools
+from . import compute_routes
+from . import intake
 from .grouping import partition
 from .msa import build_msa
 
@@ -45,6 +47,28 @@ def _scramble_null(cognate_score_path):
         return float(sib.read_text().strip())
     except (ValueError, OSError):
         return None
+
+
+def scan_recorded_folds(run_dir, tool="protenix"):
+    """Find fold outputs already on disk under <run_dir>/out and group them per clonotype.
+    Protenix marks the construct in the DIRECTORY ({cid}_cognate / {cid}_scramble), not the
+    filename, so parse the cid from the top-level out/ dir. Resume path: the local_gpu bash
+    route wrote CIFs here directly, and a Colab download unzipped here has the same layout."""
+    out = Path(run_dir) / "out"
+    found = {}
+    if not out.exists():
+        return found
+    for d in sorted(out.iterdir()):
+        if not d.is_dir():
+            continue
+        for suffix in ("_cognate", "_scramble"):
+            if d.name.endswith(suffix):
+                cid = d.name[: -len(suffix)]
+                cifs = sorted(str(p) for p in d.rglob("*.cif"))
+                if cifs:
+                    found.setdefault(cid, {"paths": [], "tool": tool})
+                    found[cid]["paths"].extend(cifs)
+    return found
 
 
 def _load(rd, name, cls):
@@ -128,6 +152,16 @@ async def list_structure_tools(args):
     return r
 
 
+@tool("list_compute_routes",
+      "List the compute routes (Colab, local GPU, SSH, server), the fields each needs, and "
+      "whether its runner is wired, so the intake agent asks the right questions.",
+      {"run_dir": str})
+async def list_compute_routes(args):
+    r = _txt("compute route registry")
+    r["structuredContent"] = {"routes": compute_routes.as_dicts()}
+    return r
+
+
 def _fold_inputs(tool: str, job: dict, clonotype_id: str, clon=None, ann=None) -> dict:
     """Shape a fold job's construct into the tool's Colab inputs. mhcfine, affinetune and
     tcrdock each take a cognate + scramble pair (keys prefixed by clonotype id so per-clonotype
@@ -189,6 +223,53 @@ async def build_fold_notebook(args):
     return r
 
 
+@tool("build_fold_artifact",
+      "Build the fold artifact (Colab notebook or local bash script) for one clonotype, "
+      "chosen by the compute route, write it under the run dir, and return its path.",
+      {"run_dir": str, "clonotype_id": str, "tool": str, "compute_route": str})
+async def build_fold_artifact(args):
+    import json as _json
+    from .tools.notebook import build_notebook
+    from .tools.protenix_script import build as build_script
+    rs = RunState(args["run_dir"])
+    jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
+    cid = args["clonotype_id"]
+    job = next((j for j in jobs if j["clonotype_id"] == cid), None)
+    if job is None:
+        return _txt(f"no fold job for {cid}")
+    tool = args["tool"]
+    route = args["compute_route"]
+    kind = compute_routes.artifact_kind_for(route)
+    wired = compute_routes.is_wired(route)
+    # tcrdock needs the gene-level Clonotype+Annotation (see build_fold_notebook); read them
+    # back only when needed so the artifact inputs match the notebook path exactly.
+    clon = ann = None
+    if tool == "tcrdock":
+        clon = next((c for c in _load(args["run_dir"], "ingest", Clonotype) if c.id == cid), None)
+        ann = next((a for a in _load(args["run_dir"], "annotate", Annotation)
+                    if a.clonotype_id == cid), None)
+    inputs = _fold_inputs(tool, job, cid, clon, ann)
+    if kind == "colab_notebook":
+        nb = build_notebook(tool, inputs)
+        nb_dir = Path(args["run_dir"]) / "notebooks"
+        nb_dir.mkdir(parents=True, exist_ok=True)
+        out = nb_dir / f"{cid}_{tool}.ipynb"
+        out.write_text(_json.dumps(nb, indent=1))
+    else:  # bash_script (local_gpu, and the honest ssh/server handoff)
+        spec = intake.load_intake(args["run_dir"])
+        working = (spec.route_params.get("working_path") if spec else None) or "."
+        script = build_script(inputs, working_path=working)
+        sc_dir = Path(args["run_dir"]) / "scripts"
+        sc_dir.mkdir(parents=True, exist_ok=True)
+        out = sc_dir / f"{cid}_{tool}.sh"
+        out.write_text(script)
+    note = "" if wired else f" (route '{route}' runner not wired; run the script yourself)"
+    r = _txt(f"{kind} for {cid} ({tool}) via {route} written to {out}{note}")
+    r["structuredContent"] = {"artifact_path": str(out), "artifact_kind": kind,
+                              "route_wired": wired, "clonotype_id": cid, "tool": tool}
+    return r
+
+
 @tool("record_fold_result", "Record the model paths a fold produced for one clonotype, with the tool used.",
       {"run_dir": str, "clonotype_id": str, "model_paths": list, "tool": str})
 async def record_fold_result(args):
@@ -198,6 +279,22 @@ async def record_fold_result(args):
                                   "tool": args.get("tool", "protenix")}
     rs.write_stage("folds", done)
     return _txt(f"recorded {len(args['model_paths'])} models for {args['clonotype_id']} via {args.get('tool', 'protenix')}")
+
+
+@tool("record_local_folds",
+      "Scan <run_dir>/out for fold CIFs already on disk (local_gpu run, or a Colab download "
+      "unzipped there) and record them per clonotype so QC can proceed.",
+      {"run_dir": str, "tool": str})
+async def record_local_folds(args):
+    rs = RunState(args["run_dir"])
+    done = rs.read_stage("folds") if rs.stage_done("folds") else {}
+    found = scan_recorded_folds(args["run_dir"], args.get("tool", "protenix"))
+    added = {cid: rec for cid, rec in found.items() if cid not in done}
+    done.update(added)
+    rs.write_stage("folds", done)
+    r = _txt(f"recorded {len(added)} clonotypes from disk: {sorted(added)}")
+    r["structuredContent"] = {"recorded": len(added), "clonotypes": sorted(added)}
+    return r
 
 
 @tool("qc_structure", "Score a fold (per-group threshold) and return a skeptical verdict; output-type aware.",
@@ -277,6 +374,21 @@ async def qc_structure(args):
     return r
 
 
+@tool("record_intake",
+      "Persist the intake brief (data type, input path, question, compute route, route params) "
+      "to run_dir/intake.json so the run can proceed and later resume. Secrets are stripped.",
+      {"run_dir": str, "data_type": str, "input_path": str, "question": str,
+       "compute_route": str, "route_params": dict})
+async def record_intake(args):
+    from .intake import IntakeSpec
+    spec = IntakeSpec(args["data_type"], args["input_path"], args["question"],
+                      args["compute_route"], args.get("route_params", {}))
+    path = intake.save_intake(args["run_dir"], spec)
+    r = _txt(f"intake recorded to {path}")
+    r["structuredContent"] = {"intake_path": path, "compute_route": spec.compute_route}
+    return r
+
+
 @tool("render_final_report", "Render the self contained HTML report for the run.",
       {"run_dir": str})
 async def render_final_report(args):
@@ -311,6 +423,6 @@ async def render_final_report(args):
 def build_server():
     return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
         ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
-        list_structure_tools, build_fold_notebook, record_fold_result, qc_structure,
-        render_final_report,
+        list_structure_tools, list_compute_routes, build_fold_notebook, build_fold_artifact, record_fold_result,
+        record_local_folds, qc_structure, render_final_report, record_intake,
     ])

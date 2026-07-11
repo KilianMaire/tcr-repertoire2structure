@@ -7,7 +7,33 @@ _EXEC_TOOLS = ["mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__build_fold_n
                "mcp__rep2struct__record_fold_result", "mcp__playwright__*"]
 
 
-def _executor(name, tool):
+_HANDOFF_EXEC_TOOLS = ["mcp__rep2struct__list_fold_jobs",
+                       "mcp__rep2struct__build_fold_artifact"]
+
+
+def _handoff_executor(name, tool):
+    return AgentDefinition(
+        description=f"{name}: builds the {tool} fold artifact for its group and stops "
+                    f"for the user to run it.",
+        prompt=(
+            f"You prepare the {tool} folds for the jobs assigned to your group; you do NOT "
+            f"run them. Call list_fold_jobs, and for each job whose tool is '{tool}' AND "
+            f"whose done is false: call build_fold_artifact with tool='{tool}' and the run's "
+            f"compute_route to write that job's self-contained artifact (a Colab notebook or "
+            f"a local bash script, chosen by the route) and get its path. Report each "
+            f"artifact path to the user with one line on how to run it: for a Colab notebook, "
+            f"upload it and run the cells; for a bash script, run it on the target machine. "
+            f"If build_fold_artifact reports route_wired false, say plainly the route runner "
+            f"is not wired and hand over the script for the user to run. Never fabricate a "
+            f"model or a score, and never open a browser."),
+        tools=list(_HANDOFF_EXEC_TOOLS),
+        model="sonnet",
+    )
+
+
+def _executor(name, tool, mode="auto"):
+    if mode == "handoff":
+        return _handoff_executor(name, tool)
     return AgentDefinition(
         description=f"{name}: folds the {tool} group by driving its Colab notebook through the browser.",
         prompt=(
@@ -46,8 +72,32 @@ def _executor(name, tool):
     )
 
 
-def build_agents():
+def build_agents(mode="auto"):
     agents = {
+        "intake-agent": AgentDefinition(
+            description="Conversational intake: asks data, question, and compute environment, "
+                        "then hands a structured brief to the orchestrator.",
+            prompt=(
+                "You run the R2S intake interview. Ask the user, one question at a time and "
+                "branching on their answers: (1) what kind of data they have, (2) where the "
+                "input file is (a path, or a file they dropped into the run folder), (3) what "
+                "question or task they want answered, (4) which compute environment they can "
+                "run predictions on. For (4) call list_compute_routes and collect EVERY "
+                "required_field of the route the user names, never skipping one even if the "
+                "route seems to 'need no setup': local_gpu requires working_path (the "
+                "directory on that machine where the fold outputs must be written); ssh "
+                "requires host, user, an SSH key first with a password only as a last resort, "
+                "and remote_path; server requires address and path; colab requires nothing "
+                "extra. If the user does "
+                "not know, propose the default route (Colab), the simplest option. Never "
+                "write a password anywhere. When you have all four, summarize the brief back "
+                "and confirm before the run proceeds. When you have all four answers, call "
+                "record_intake to persist the brief, then confirm before the run proceeds."),
+            tools=["mcp__rep2struct__list_compute_routes",
+                   "mcp__rep2struct__ingest_repertoire",
+                   "mcp__rep2struct__record_intake", "Agent"],
+            model="opus",
+        ),
         "structure-strategist": AgentDefinition(
             description="Reasons over the tool registry and construct tags; routes each group to a tool.",
             prompt=(
@@ -88,26 +138,31 @@ def build_agents():
         ),
     }
     for t in structure_tools.REGISTRY:
-        agents[f"{t.name}-agent"] = _executor(f"{t.name}-agent", t.name)
+        agents[f"{t.name}-agent"] = _executor(f"{t.name}-agent", t.name, mode=mode)
     return agents
 
 
-def build_options(run_dir):
+def build_options(run_dir, mode="auto"):
+    base = [
+        "Agent",
+        "mcp__rep2struct__ingest_repertoire", "mcp__rep2struct__annotate_specificity",
+        "mcp__rep2struct__prep_and_select", "mcp__rep2struct__list_structure_tools",
+        "mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__list_compute_routes",
+        "mcp__rep2struct__record_fold_result", "mcp__rep2struct__record_local_folds",
+        "mcp__rep2struct__qc_structure", "mcp__rep2struct__render_final_report",
+        "mcp__rep2struct__record_intake",
+    ]
+    if mode == "handoff":
+        allowed = base + ["mcp__rep2struct__build_fold_artifact"]
+        servers = {"rep2struct": build_server()}
+    else:
+        allowed = base + ["mcp__rep2struct__build_fold_notebook", "mcp__playwright__*"]
+        servers = {"rep2struct": build_server(),
+                   "playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]}}
     return ClaudeAgentOptions(
-        mcp_servers={
-            "rep2struct": build_server(),
-            "playwright": {"command": "npx", "args": ["@playwright/mcp@latest"]},
-        },
-        agents=build_agents(),
-        allowed_tools=[
-            "Agent",
-            "mcp__rep2struct__ingest_repertoire", "mcp__rep2struct__annotate_specificity",
-            "mcp__rep2struct__prep_and_select", "mcp__rep2struct__list_structure_tools",
-            "mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__build_fold_notebook",
-            "mcp__rep2struct__record_fold_result",
-            "mcp__rep2struct__qc_structure", "mcp__rep2struct__render_final_report",
-            "mcp__playwright__*",
-        ],
+        mcp_servers=servers,
+        agents=build_agents(mode=mode),
+        allowed_tools=allowed,
         # Autonomous multi-agent demo run; no interactive approval needed during live orchestration.
         permission_mode="bypassPermissions",
     )
@@ -123,3 +178,18 @@ def orchestrator_prompt(csv_path, run_dir, top_n, question=None):
         f"3. Delegate to the structure-strategist to route each group to a tool and drive its executor to fold.\n"
         f"4. Delegate to the qc-agent to QC each folded clonotype with that group's calibration.\n"
         f"5. Delegate to the report-agent to render the final HTML report, and return its path.")
+
+
+def intake_orchestrator_prompt(run_dir, spec):
+    return (
+        f"Run the repertoire to structure pipeline on {spec.input_path} with run_dir "
+        f"{run_dir}.\nUser question steering the routing: {spec.question}\n"
+        f"Compute route: {spec.compute_route} (route params {spec.route_params}).\n"
+        f"1. Call ingest_repertoire, then annotate_specificity (honest annotation, keep "
+        f"unannotatable as is).\n"
+        f"2. Call prep_and_select with top_n 8.\n"
+        f"3. Delegate to the structure-strategist to route each group to a tool; each tool's "
+        f"executor builds the fold artifact for compute_route '{spec.compute_route}' and "
+        f"STOPS. Present the plan (which group to which tool, which artifact files) and let "
+        f"the user confirm before generating artifacts.\n"
+        f"4. Tell the user to run the artifacts and rerun R2S on this run_dir to resume.")

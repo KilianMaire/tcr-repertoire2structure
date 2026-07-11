@@ -5,6 +5,8 @@ __pycache__/
 .DS_Store
 runs/
 data/raw/
+data/dataset/
+Data/
 
 *.h5ad
 
@@ -14,3 +16,4 @@ runs/
 
 # 10x dextramer CSVs (~350MB, public dataset, never commit)
 Data/
+*.egg-info/
