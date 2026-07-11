@@ -57,13 +57,20 @@ AUROC for separating a genuine binder from its composition-scramble
    `ranking_score` sit at chance, so a good global ranking score does not imply a
    presented peptide.
 
-3. The HLA gap is biologically sensible. A*02:01 is a permissive allele with
-   loose anchors (P2 and the C-terminus tolerate several residues), so a shuffle
-   of an A*02:01 nonamer often remains a passable binder and the separation
-   shrinks. A*11:01 has a strict C-terminal lysine or arginine anchor that a
-   shuffle usually destroys, giving near perfect separation. This is offered as
-   interpretation, not proof; confirming it would need an explicit anchor
-   retention check on the scrambles.
+3. The HLA gap is permissiveness at the scoring level, not anchor loss in the
+   scramble. We first guessed the scramble simply destroys the anchor more often
+   on A*11:01, and tested it: the fraction of scrambles that still satisfy the
+   allele anchor motif is similar for the two alleles (60% for A*02:01, 50% for
+   A*11:01), so anchor destruction does not account for the AUROC gap. The real
+   mechanism is in the absolute groove confidence. A*02:01 is a permissive
+   groove: Protenix seats an A*02:01 scramble almost as confidently as a genuine
+   ligand (median iptm_groove 0.959 vs 0.976, a 0.018 gap with heavily
+   overlapping spread), which compresses the separation. On A*11:01 the scramble
+   confidence drops and spreads (0.940 vs 0.972, scramble lower quartile 0.88),
+   giving clean separation. The readout inherits the allele's binding
+   permissiveness: it separates ligand from non-ligand well only where the groove
+   itself is discriminating.
+   Reproduce: `python scripts/check_scramble_anchors.py runs/panel1 runs/hla_a1101`
 
 ## Conclusion
 
@@ -71,7 +78,8 @@ Taken with the TCR result, the picture is surgical rather than merely negative.
 A Protenix or AlphaFold confidence readout is informative about MHC-peptide
 presentation (does this peptide bind this HLA) and uninformative about TCR-peptide
 recognition (does this TCR read this peptide). The groove interface confidence is
-a usable presentation filter, strongest on anchor-strict alleles. It is not, and
+a usable presentation filter, strongest on discriminating (less permissive)
+alleles. It is not, and
 the variance analysis shows it cannot be, a TCR-specificity oracle. This is the
 evidence base for keeping the two honesty rules separate in the output schema:
 presentation may be scored, recognition may not.
