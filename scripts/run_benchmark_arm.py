@@ -105,15 +105,19 @@ def score_manifest(out_dir, dextramer_dir):
     sel = [c for c in clons if c.id in manifest]
     anns = annotations_from_cache(sel, nearest_cache(sel))
     result = bm.evaluate(manifest, out_dir / "folds", anns)
-    (out_dir / "benchmark_report.md").write_text(render_report(result))
+    hlas = sorted({e["hla"] for e in manifest.values() if e.get("hla")})
+    (out_dir / "benchmark_report.md").write_text(render_report(result, hlas))
     return result
 
 # readouts whose direction is a control, not a claim (must NOT beat chance)
 _CONTROL_READOUTS = {"iptm_groove_ctrl"}
 
-def render_report(result):
+def render_report(result, hlas=None):
+    # Header names the actual HLA(s) of this run, read from the manifest, so a
+    # held-out arm on a different allele (e.g. A*11:01) never prints A*02:01.
+    hla_label = ", ".join(hlas) if hlas else "the target HLA"
     lines = ["# Structure-vs-sequence retrieval benchmark\n",
-             "Do structural readouts recover the cognate epitope for A*02:01 CD8 "
+             f"Do structural readouts recover the cognate epitope for {hla_label} CD8 "
              "TCRs that sequence annotation (tcrdist) cannot place? Panel = cognate "
              "+ same-HLA decoys + composition-scramble; 5 Protenix samples each; "
              "rank the epitopes by each readout, score Top-1.\n"]
