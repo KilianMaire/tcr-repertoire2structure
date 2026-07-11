@@ -23,9 +23,22 @@ Derived data and figures (no GPU):
 
 ```
 python paper/make_paper_data.py                    # data/*.csv from runs/
-python scripts/plot_confidence_variance.py         # Fig 4
-python scripts/plot_mhc_scramble.py                # Fig 5
+python scripts/plot_validation.py                  # Fig 2
+python scripts/plot_retrieval.py                   # Fig 3
+python scripts/plot_confidence_variance.py         # Fig 4 (reconstructed-only)
+python scripts/plot_mhc_scramble.py                # Fig 5 (reconstructed-only)
+python scripts/plot_synthesis.py                   # Fig 6
+python scripts/plot_structure_3d.py                # Fig 1 (composes the PyMOL renders)
 ```
+
+Fig 1's cartoon renders come from PyMOL in a separate micromamba env:
+
+```
+micromamba run -n pymol python scripts/render_structure_pymol.py <cif> paper/figures
+```
+
+The two rendered views are committed, so `plot_structure_3d.py` rebuilds Fig 1
+without PyMOL installed.
 
 Validation arm from scratch (CPU, needs the dextramer dataset under data/dataset):
 

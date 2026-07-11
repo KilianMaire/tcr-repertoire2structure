@@ -48,32 +48,27 @@ test.
    output schema: presentation may be scored, recognition may not; a predicted
    structure never upgrades a specificity call. Backs: `Fig 1`, `Fig 6`.
 
-## Figure panels (main, 4 to 6)
+## Figure panels (main, all built; see figures/README.md)
 
-- **Fig 1. Pipeline and honesty rules.** Schematic: 10x contigs, clonotype
-  curation, honest annotation, construct build, Protenix fold, skeptical QC,
-  report. Callouts for the two honesty rules. Source: `docs/architecture.png`
-  redrawn; conceptual.
+- **Fig 1. A predicted TCR-pMHC complex (reader aid).** Ray-traced PyMOL cartoon
+  of a confident cognate fold (flu GILGFVFTL on HLA-A*02:01), two views, the five
+  chains coloured and labelled for lay readers. `fig1_structure.png`.
 - **Fig 2. Honest annotation and the leakage guard.** (a) precision, recall,
   unannotatable rate, raw vs de-leaked; (b) precision and recall across the
-  TCRdist cut, raw vs de-leaked; (c) distance distribution of correct calls
-  (median 0, the leakage signature). Data: `validation_annotation.csv`,
-  `validation_threshold_sweep.csv`, `validation_leakage.csv`.
-- **Fig 3. Structure vs sequence, discovery and held-out.** (a) Top-1 per
-  readout on the A*02:01 discovery panel vs the sequence baseline (0.0);
-  (b) the pre-registered A*11:01 held-out confirmation for the single primary
-  metric with its permutation p, showing it lands at chance. Data:
-  `tcr_retrieval_top1.csv`, `Table 2`.
-- **Fig 4. Confidence separates TCRs, not epitopes.** (a) stacked variance
-  (TCR, peptide, cognate, residual) per condition; (b) cognate effect size with
-  bootstrap CI, significant on discovery, null on held-out. Built:
-  `scripts/plot_confidence_variance.py` -> `docs/confidence_variance.png`.
+  TCRdist cut; (c) distance percentiles of correct calls (median 0, the leakage
+  signature). `fig2_validation.png`.
+- **Fig 3. Structure vs sequence, discovery and held-out.** (a) discovery battery
+  Top-1 vs the sequence baseline (0.0) and naive chance (0.25) with exact-binomial
+  significance; (b) the pre-registered A*11:01 held-out primary landing at chance
+  (not licensed). `fig3_retrieval.png`.
+- **Fig 4. Confidence separates TCRs, not epitopes.** (a) stacked variance per
+  condition; (b) cognate effect size with bootstrap CI, significant on discovery,
+  null on held-out. Reconstructed TCRs only. `fig4_confidence_variance.png`.
 - **Fig 5. Confidence reads MHC-peptide presentation.** binder vs scramble AUROC
-  per metric per HLA, with the permissiveness inset (absolute groove medians).
-  Built: `scripts/plot_mhc_scramble.py` -> `docs/mhc_peptide_presentation.png`.
-- **Fig 6 (optional). The two-axis map.** A schematic placing each structural
-  readout on presentation (informative) vs recognition (blind), summarising the
-  paper. Conceptual.
+  per metric per HLA. Reconstructed TCRs only. `fig5_mhc_presentation.png`.
+- **Fig 6. The two-axis map.** Structural readouts positioned on presentation
+  (informative) vs recognition (blind), anchored to the Fig 3/5 numbers.
+  `fig6_two_axis_map.png`.
 
 ## Supplementary
 
