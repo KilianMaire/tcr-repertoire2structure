@@ -17,3 +17,8 @@ runs/
 # 10x dextramer CSVs (~350MB, public dataset, never commit)
 Data/
 *.egg-info/
+
+# The paper package's derived data IS committed on purpose. The case-insensitive
+# `Data/` rule above otherwise swallows paper/data/ on macOS, so re-include it.
+!paper/data/
+!paper/data/**

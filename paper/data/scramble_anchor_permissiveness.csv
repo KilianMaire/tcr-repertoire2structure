@@ -1,0 +1,3 @@
+run,hla,n_tcr,cognate_anchor_frac,scramble_anchor_frac,binder_groove_median,scramble_groove_median
+panel1,HLA-A*02:01,48,0.958,0.604,0.9765,0.9588
+hla_a1101,HLA-A*11:01,24,1.0,0.5,0.9724,0.9396
