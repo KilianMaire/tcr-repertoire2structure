@@ -203,6 +203,8 @@ def test_protenix_notebook_computes_pre_fold_msa():
                    "/content/msa", "unpairedMsaPath", "len(s) >= 20", "_msa_manifest.json",
                    "MSA_FAIL"):
         assert marker in src, f"missing MSA marker: {marker}"
+    # every chain also gets a pairedMsaPath so Protenix skips its (stall-prone) MSA server
+    assert "pairedMsaPath" in src
     # import run_mmseqs2 from colabfold.colabfold (requests-only), NOT colabfold.batch
     # which imports alphafold at load and dies without the heavy [alphafold] extra (live-verified)
     assert "from colabfold.colabfold import run_mmseqs2" in src

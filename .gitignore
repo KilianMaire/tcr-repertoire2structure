@@ -11,3 +11,6 @@ data/raw/
 # local run outputs / datasets (never redistribute TABLO)
 *.fasta
 runs/
+
+# 10x dextramer CSVs (~350MB, public dataset, never commit)
+Data/

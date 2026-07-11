@@ -36,13 +36,26 @@ def test_ensemble_contact_summarizes_valid_models_and_skips_bad():
     assert med2 == single and n_models2 == 2 and n_valid2 == 1
 
 
+def test_cdr3b_restriction_maps_and_fails_loud():
+    # When cdr3b is given, contact is restricted to the chain-B residues spelling it.
+    # The min fixture's chain B is "AAAA", so cdr3b="AAAA" restricts to the whole chain
+    # and matches the unrestricted count; a cdr3b absent from chain B must return None
+    # WITH a flag, never a silent fall-back to the whole chain (that would mix the two
+    # metric definitions the benchmark is careful to keep apart).
+    whole = score_model(FIX / "cognate_min.cif")["cdr3_pep_atoms"]
+    mapped = score_model(FIX / "cognate_min.cif", cdr3b="AAAA")["cdr3_pep_atoms"]
+    assert mapped == whole
+    unmapped = score_model(FIX / "cognate_min.cif", cdr3b="ZZZ")
+    assert unmapped["cdr3_pep_atoms"] is None and unmapped["cdr3b_unmapped"] is True
+
+
 def test_ensemble_contact_median_ignores_a_degenerate_outlier(monkeypatch):
     # Regression from the first live fold: scramble samples were [0, 591, 0, 0, 0]; the mean
     # (118) was dominated by the lone 591 pose and flipped the verdict. The MEDIAN reflects
     # the typical pose (0) and ignores the outlier.
     from rep2struct import qc
     scores = {"s0": 0.0, "s1": 591.0, "s2": 0.0, "s3": 0.0, "s4": 0.0}
-    monkeypatch.setattr(qc, "score_model", lambda p: {"cdr3_pep_atoms": scores[p], "n_chains": 5})
+    monkeypatch.setattr(qc, "score_model", lambda p, cdr3b=None: {"cdr3_pep_atoms": scores[p], "n_chains": 5})
     med, n_models, n_valid = qc.ensemble_contact(list(scores))
     assert n_models == 5 and n_valid == 5
     assert med == 0.0                                  # median ignores the lone 591

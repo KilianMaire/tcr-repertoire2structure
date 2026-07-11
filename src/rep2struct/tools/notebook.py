@@ -326,12 +326,16 @@ def _protenix_notebook(inputs: dict) -> dict:
     A-E construct; the QC reads the produced CIFs, ensembles the CDR3-peptide contact
     over the samples, and calibrates the cognate against its own scramble.
 
-    A pre-fold MSA cell (ColabFold MMseqs2, CPU) computes one unpaired a3m per unique
-    protein chain and injects it as unpairedMsaPath, so the fold runs with a real MSA
-    without Protenix's own MSA server (which once throttled and wedged an MSA batch)
-    ever touching the GPU runtime. The Protenix-internal search stays off; the provided
-    a3m is consumed. The peptide chain is excluded (single sequence), and any chain whose
-    search failed folds MSA-free, so the scramble-margin the QC reports stays honest.
+    A pre-fold MSA cell (ColabFold MMseqs2, CPU) computes one deep unpaired a3m per
+    unique protein chain and injects it as unpairedMsaPath, and injects a query-only
+    pairedMsaPath on EVERY chain. Protenix pings its own MSA server per construct even
+    when a MSA is provided, and that server stalls folds at MSA PENDING for hours (a
+    live batch wedged this way); providing BOTH a paired and an unpaired path on every
+    chain makes Protenix report 'do not need to update msa result' and skip the server
+    entirely. The paired path is query-only (no cross-chain co-evolution signal, which
+    is weak for TCR-pMHC anyway); the depth lives in the unpaired MSA. Peptides and any
+    failed search get a query-only unpaired path too, so no chain is ever left without
+    both fields (which would re-trigger the server for that chain).
     """
     return {
         "nbformat": 4, "nbformat_minor": 5, "metadata": {"accelerator": "GPU"},
@@ -343,10 +347,11 @@ def _protenix_notebook(inputs: dict) -> dict:
                   "print(subprocess.run('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader',\n",
                   "                     shell=True, capture_output=True, text=True).stdout)\n",
                   "subprocess.run('pip install -q protenix', shell=True, check=True)\n"),
-            _code("# 2. MSA (Colab CPU): one unpaired a3m per UNIQUE protein chain via ColabFold\n",
-                  "# MMseqs2, injected as unpairedMsaPath. Runs BEFORE the GPU fold so a slow MSA\n",
-                  "# server cannot wedge it. Peptides (len<20) get none; a failed search folds that\n",
-                  "# chain MSA-free (never fatal).\n",
+            _code("# 2. MSA (Colab CPU): one deep unpaired a3m per UNIQUE protein chain via ColabFold\n",
+                  "# MMseqs2, injected as unpairedMsaPath, PLUS a query-only pairedMsaPath on every\n",
+                  "# chain so Protenix skips its MSA server (see the injection loop). Runs BEFORE the\n",
+                  "# GPU fold. Peptides (len<20) get a query-only unpaired; a failed search folds that\n",
+                  "# chain from its query only (never fatal).\n",
                   "import os, json, hashlib, subprocess\n",
                   "subprocess.run('pip install -q colabfold', shell=True, check=True)\n",
                   "# run_mmseqs2 lives in the requests-only submodule; the batch pipeline module\n",
@@ -369,20 +374,26 @@ def _protenix_notebook(inputs: dict) -> dict:
                   "    except Exception as e:\n",
                   "        print('MSA_FAIL', h, type(e).__name__, e, flush=True)\n",
                   "os.makedirs('out', exist_ok=True)\n",
+                  "def _qonly(tag, s):\n",
+                  "    p = f'/content/msa/qo_{tag}.a3m'; open(p, 'w').write(f'>query\\n{s}\\n'); return p\n",
                   "manifests = {}\n",
                   "for key, rec in INPUTS.items():\n",
                   "    cid = key.rsplit('_', 1)[0]   # {cid}_cognate / {cid}_scramble -> cid\n",
                   "    man = manifests.setdefault(cid, {})\n",
                   "    for ch in rec[0]['sequences']:\n",
-                  "        pc = ch['proteinChain']; s = pc['sequence']\n",
-                  "        if s in seq2path:\n",
-                  "            pc['unpairedMsaPath'] = seq2path[s]\n",
-                  "            man[pc['id'][0]] = {'got_msa': True}\n",
-                  "        elif len(s) >= 20:\n",
-                  "            man[pc['id'][0]] = {'got_msa': False}\n",
+                  "        pc = ch['proteinChain']; s = pc['sequence']; c = pc['id'][0]\n",
+                  "        # unpaired: the deep ColabFold a3m where we have it, else a query-only a3m\n",
+                  "        # (peptides, failed searches). paired: query-only on EVERY chain. Both fields\n",
+                  "        # present on every chain is what makes Protenix report 'do not need to update\n",
+                  "        # msa result' and skip its MSA server, which otherwise stalls folds at MSA\n",
+                  "        # PENDING for hours (it is pinged per construct even with a provided MSA).\n",
+                  "        pc['unpairedMsaPath'] = seq2path.get(s) or _qonly(f'{key}_{c}_u', s)\n",
+                  "        pc['pairedMsaPath'] = _qonly(f'{key}_{c}_p', s)\n",
+                  "        man[c] = {'got_msa': s in seq2path}\n",
                   "for cid, man in manifests.items():\n",
                   "    json.dump(man, open(f'out/{cid}_msa_manifest.json', 'w'))\n",
-                  "print('MSA done; a3m:', len(seq2path), 'manifests:', list(manifests), flush=True)\n"),
+                  "print('MSA done; deep a3m:', len(seq2path), '| all chains have paired+unpaired;',\n",
+                  "      'manifests:', list(manifests), flush=True)\n"),
             _code("# 2. write each embedded record to inputs/{key}.json (INPUTS now carries the\n",
                   "# unpairedMsaPath the MSA cell injected). Print positive proof the MSA reached the\n",
                   "# JSON, so a wrong cell-run order can never silently fold MSA-free.\n",
