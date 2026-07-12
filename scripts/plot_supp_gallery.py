@@ -55,11 +55,23 @@ def _peptide_xy(img):
 
 def main():
     apply()
-    fig = plt.figure(figsize=(11, 10.5))
-    gs = fig.add_gridspec(2, 2, hspace=0.10, wspace=0.04,
-                          left=0.02, right=0.98, top=0.98, bottom=0.10)
-    for i, (lab, fname, caption) in enumerate(PANELS):
-        ax = fig.add_subplot(gs[i // 2, i % 2])
+    fig = plt.figure(figsize=(12, 10.5))
+    # Explicit layout: the tall complexes are pushed to the outer edges and the
+    # enlarged peptide zooms fill the wide empty band down the middle. Positions are
+    # figure fractions (x, y, w, h). For each panel: complex axes, inset axes toward
+    # the centre, panel-side anchor for the leader.
+    ROW = {"top": 0.545, "bot": 0.075}
+    CH, CW = 0.43, 0.23            # complex axes height, width
+    IW, IH = 0.235, 0.245          # inset axes size
+    LAYOUT = [
+        # complex_xy,          inset_xy,          left_col
+        ((0.005, ROW["top"]), (0.250, ROW["top"] + 0.09), True),   # (a)
+        ((0.765, ROW["top"]), (0.515, ROW["top"] + 0.09), False),  # (b)
+        ((0.005, ROW["bot"]), (0.250, ROW["bot"] + 0.09), True),   # (c)
+        ((0.765, ROW["bot"]), (0.515, ROW["bot"] + 0.09), False),  # (d)
+    ]
+    for (lab, fname, caption), ((cx, cy), (ix, iy), left_col) in zip(PANELS, LAYOUT):
+        ax = fig.add_axes([cx, cy, CW, CH])
         full = _autocrop(plt.imread(FIGS / fname))
         ax.imshow(full)
         ax.set_aspect("equal")
@@ -68,22 +80,19 @@ def main():
                 fontweight="bold", va="top", ha="left", color=PALETTE["ink"])
         ax.text(0.5, -0.02, caption, transform=ax.transAxes, fontsize=9,
                 ha="center", va="top", color=PALETTE["ink"])
-        # inset: an enlarged zoom on the peptide in the groove, placed in the empty
-        # lower corner toward the figure centre, with a leader line from the peptide
-        # on the full complex.
-        left_col = (i % 2 == 0)
-        bounds = [0.57, 0.03, 0.42, 0.32] if left_col else [0.01, 0.03, 0.42, 0.32]
-        iax = ax.inset_axes(bounds)
+
+        iax = fig.add_axes([ix, iy, IW, IH])
         iax.imshow(_autocrop(plt.imread(FIGS / fname.replace(".png", "_inset.png"))))
         iax.set_aspect("equal")
         iax.set_xticks([]); iax.set_yticks([])
         for sp in iax.spines.values():
             sp.set_visible(True); sp.set_edgecolor(PALETTE["mute"]); sp.set_linewidth(1.0)
-        iax.text(0.5, 1.02, "peptide", transform=iax.transAxes, fontsize=8,
+        iax.text(0.5, 1.02, "peptide", transform=iax.transAxes, fontsize=8.5,
                  ha="center", va="bottom", color=PALETTE["mute"])
+
         pep = _peptide_xy(full)
         if pep is not None:
-            anchor = (0.12, 1.0) if left_col else (0.88, 1.0)  # inset corner facing the peptide
+            anchor = (0.0, 0.5) if left_col else (1.0, 0.5)   # inset edge facing the complex
             con = ConnectionPatch(xyA=anchor, coordsA=iax.transAxes,
                                   xyB=pep, coordsB=ax.transData,
                                   lw=1.1, ls=(0, (4, 3)), color=PALETTE["ink"], zorder=5)
