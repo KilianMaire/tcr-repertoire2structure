@@ -23,11 +23,54 @@ def _default_sim(cdr3_a, v_a, cdr3_b, v_b, species="human", top_k=5):
               "mhc": n.mhc_a, "antigen": n.antigen} for n in neigh]
     return dicts, engine, total, warns
 
-def annotate(clonotypes, sim_fn=None, tiers=DEFAULT_TIERS):
+def _cache_key(c, species="human"):
+    return "|".join([species, c.trav or "", c.cdr3a or "", c.trbv or "", c.cdr3b or ""])
+
+
+def _neighbours(clonotypes, fn, cache_path, max_workers):
+    """Return {index: neighbour-list} for every clonotype, using an on-disk cache keyed by the
+    (species, V/CDR3) tuple and a bounded thread pool. The similarity lookups are network-bound,
+    so a serial loop over thousands of clonotypes is the ingest-time wall; fan them out. Results
+    are keyed by index, so the caller reassembles in input order (determinism preserved)."""
+    import concurrent.futures
+    import json
+    from pathlib import Path
+    cache = {}
+    if cache_path and Path(cache_path).exists():
+        try:
+            cache = json.loads(Path(cache_path).read_text())
+        except (ValueError, OSError):
+            cache = {}
+    results, todo = {}, []
+    for i, c in enumerate(clonotypes):
+        key = _cache_key(c)
+        if key in cache:
+            results[i] = cache[key]
+        else:
+            todo.append((i, c))
+    if todo:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+            fut = {ex.submit(fn, c.cdr3a, c.trav, c.cdr3b, c.trbv, "human", 5): (i, c)
+                   for i, c in todo}
+            for f in concurrent.futures.as_completed(fut):
+                i, c = fut[f]
+                neigh = f.result()[0]
+                results[i] = neigh
+                cache[_cache_key(c)] = neigh
+    if cache_path and todo:
+        try:
+            Path(cache_path).write_text(json.dumps(cache))
+        except OSError:
+            pass
+    return results
+
+
+def annotate(clonotypes, sim_fn=None, tiers=DEFAULT_TIERS, cache_path=None, max_workers=8):
     fn = sim_fn or _default_sim
+    neigh_by_i = _neighbours(clonotypes, fn, cache_path, max_workers)
     out = []
-    for c in clonotypes:
-        neigh, *_ = fn(c.cdr3a, c.trav, c.cdr3b, c.trbv, species="human", top_k=5)
+    for i, c in enumerate(clonotypes):
+        neigh = neigh_by_i.get(i) or []
         if not neigh:
             out.append(Annotation(clonotype_id=c.id, annotatable=False,
                                   confidence_tier="unannotatable"))

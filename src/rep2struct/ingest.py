@@ -9,10 +9,12 @@ def _clon_id(trav, cdr3a, trbv, cdr3b) -> str:
     return hashlib.sha1(key.encode()).hexdigest()[:12]
 
 def _mode(values):
-    # most common J gene call among the cells collapsing to one clonotype
+    # most common J gene call among the cells collapsing to one clonotype. Iterate a SORTED set
+    # so a count tie breaks deterministically (a plain set() iterates in hash-randomized order,
+    # which would make the chosen J gene vary per process and leak into tcrdock inputs).
     if not values:
         return None
-    return max(set(values), key=values.count)
+    return max(sorted(set(values)), key=values.count)
 
 def parse_10x(path, report: bool = False):
     df = pd.read_csv(path)

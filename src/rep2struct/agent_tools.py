@@ -126,7 +126,11 @@ async def annotate_specificity(args):
     cap = int(os.environ.get("R2S_ANNOTATE_CAP", "3000"))
     head = clons[:cap]
     skipped = len(clons) - len(head)
-    anns = annotate(head, sim_fn=_CFG["sim_fn"])
+    # Concurrent, cached similarity lookups: an on-disk cache keyed by the clonotype tuple makes
+    # reruns instant, and the thread pool turns thousands of serial network calls into minutes.
+    cache_path = str(Path(args["run_dir"]) / ".annotate_cache.json")
+    workers = int(os.environ.get("R2S_ANNOTATE_WORKERS", "8"))
+    anns = annotate(head, sim_fn=_CFG["sim_fn"], cache_path=cache_path, max_workers=workers)
     RunState(args["run_dir"]).write_stage("annotate", anns)
     tiers = {}
     for a in anns:

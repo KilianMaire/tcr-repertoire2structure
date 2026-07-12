@@ -65,6 +65,35 @@ def test_report_shows_only_selected_clonotypes(tmp_path):
     assert "c0" in html and "c1" not in html and "c2" not in html  # only the folded one
 
 
+# --- annotation is concurrent + cached, and preserves input order ---------------
+
+def test_annotate_caches_and_preserves_order(tmp_path):
+    from rep2struct.annotate import annotate
+    calls = {"n": 0}
+
+    def sim(cdr3_a, v_a, cdr3_b, v_b, species="human", top_k=5):
+        calls["n"] += 1
+        # only c1 has a hit, so ordering must map the hit back to the right clonotype
+        if cdr3_b == "CHIT":
+            return ([{"distance": 3.0, "epitope": "GILGFVFTL", "mhc": "HLA-A*02:01",
+                      "antigen": "Flu"}], "tcrdist", 1, [])
+        return ([], "tcrdist", 0, [])
+
+    clons = [Clonotype(id=f"c{i}", trav="TRAV1", cdr3a="CAAA", trbv="TRBV1",
+                       cdr3b=("CHIT" if i == 1 else "CMISS"), size=5) for i in range(3)]
+    cache = str(tmp_path / "cache.json")
+    anns = annotate(clons, sim_fn=sim, cache_path=cache)
+    assert [a.clonotype_id for a in anns] == ["c0", "c1", "c2"]     # input order preserved
+    assert anns[1].annotatable and anns[1].epitope == "GILGFVFTL"   # hit mapped to c1
+    assert not anns[0].annotatable and not anns[2].annotatable
+    after_first = calls["n"]
+    assert after_first == 3
+    anns2 = annotate(clons, sim_fn=sim, cache_path=cache)           # rerun hits the cache
+    assert calls["n"] == after_first                               # zero new network calls
+    assert [a.clonotype_id for a in anns2] == ["c0", "c1", "c2"]
+    assert anns2[1].epitope == "GILGFVFTL"
+
+
 # --- prep_and_select is an immutable checkpoint: resume must not clobber it ------
 
 def test_prep_and_select_does_not_clobber_existing_foldjobs(tmp_path):
