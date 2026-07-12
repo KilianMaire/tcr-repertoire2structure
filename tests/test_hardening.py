@@ -32,6 +32,39 @@ def test_assign_group_tool_persists_tool_onto_group_jobs(tmp_path):
     assert "tool=tcrdock" in listed["content"][0]["text"]
 
 
+# --- scale guards: annotate caps by size, report shows only selected ------------
+
+def test_annotate_caps_by_size_and_reports_skipped(tmp_path, monkeypatch):
+    monkeypatch.setenv("R2S_ANNOTATE_CAP", "2")
+    at.configure(sim_fn=lambda *a, **k: ([], "tcrdist", 0, []))
+    rd = str(tmp_path)
+    # size-sorted, as parse_10x would leave them
+    RunState(rd).write_stage("ingest", [
+        Clonotype(id=f"c{i}", trav="TRAV1", cdr3a="CAAA", trbv="TRBV1", cdr3b="CBBB", size=s)
+        for i, s in enumerate([50, 40, 30, 20])])
+    r = _run(at.annotate_specificity.handler({"run_dir": rd}))
+    sc = r["structuredContent"]
+    assert sc["annotated"] == 2 and sc["skipped"] == 2   # only the two largest annotated
+    assert "not annotated" in r["content"][0]["text"]
+    at.configure()
+
+
+def test_report_shows_only_selected_clonotypes(tmp_path):
+    rd = str(tmp_path)
+    at.configure()
+    RunState(rd).write_stage("ingest", [
+        Clonotype(id=f"c{i}", trav="TRAV1", cdr3a="CAAA", trbv="TRBV1", cdr3b="CBBB", size=9)
+        for i in range(3)])
+    RunState(rd).write_stage("annotate", [
+        Annotation(clonotype_id=f"c{i}", annotatable=False, confidence_tier="unannotatable")
+        for i in range(3)])
+    RunState(rd).write_stage("foldjobs", [
+        FoldJob(clonotype_id="c0", construct_fasta="x", group_id="G")])
+    r = _run(at.render_final_report.handler({"run_dir": rd}))
+    html = (tmp_path / "report.html").read_text()
+    assert "c0" in html and "c1" not in html and "c2" not in html  # only the folded one
+
+
 # --- prep_and_select is an immutable checkpoint: resume must not clobber it ------
 
 def test_prep_and_select_does_not_clobber_existing_foldjobs(tmp_path):

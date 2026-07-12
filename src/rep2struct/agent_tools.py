@@ -116,14 +116,26 @@ async def ingest_repertoire(args):
 @tool("annotate_specificity", "Annotate persisted clonotypes with candidate epitopes by TCRdist. Never forces a label.",
       {"run_dir": str})
 async def annotate_specificity(args):
+    import os
     clons = _load(args["run_dir"], "ingest", Clonotype)
-    anns = annotate(clons, sim_fn=_CFG["sim_fn"])
+    # Scale guard: annotation is one TCRdist call per clonotype, so on a 20k-clonotype 10x sample
+    # annotating everything before select_top is the ingest-time hang. Clonotypes are size-sorted
+    # (parse_10x) and select_top ranks on tier*size, so annotating only the largest `cap` spares
+    # the O(N) calls with essentially no change to which top_n get selected. The skipped tail is
+    # reported, never silently dropped (raise R2S_ANNOTATE_CAP to annotate deeper).
+    cap = int(os.environ.get("R2S_ANNOTATE_CAP", "3000"))
+    head = clons[:cap]
+    skipped = len(clons) - len(head)
+    anns = annotate(head, sim_fn=_CFG["sim_fn"])
     RunState(args["run_dir"]).write_stage("annotate", anns)
     tiers = {}
     for a in anns:
         tiers[a.confidence_tier] = tiers.get(a.confidence_tier, 0) + 1
-    r = _txt(f"annotated {len(anns)} clonotypes: {tiers}")
-    r["structuredContent"] = {"tiers": tiers}
+    msg = f"annotated {len(anns)} clonotypes: {tiers}"
+    if skipped:
+        msg += f" ({skipped} smaller clones beyond the top {cap} by size not annotated)"
+    r = _txt(msg)
+    r["structuredContent"] = {"tiers": tiers, "annotated": len(anns), "skipped": skipped}
     return r
 
 
@@ -617,7 +629,12 @@ async def render_final_report(args):
     # A clonotype folded on a poly-G stub V-domain is flagged so the report never presents a
     # fabricated framework as a real TCR (QC already caps its verdict).
     tcr_stub = {j["clonotype_id"]: not j.get("tcr_reconstructed", True) for j in fjs}
-    html = render_report(clons, anns, qcs, msa_basis=msa_basis, validity=validity,
+    # Scale guard: show only the selected/folded clonotypes, not one row per ingested clonotype,
+    # so the HTML does not blow up to 20k rows on a large repertoire. Fall back to all when
+    # nothing has been selected yet (small/early runs).
+    selected = {j["clonotype_id"] for j in fjs} | {q.clonotype_id for q in qcs}
+    shown = [c for c in clons if c.id in selected] or clons
+    html = render_report(shown, anns, qcs, msa_basis=msa_basis, validity=validity,
                          tcr_stub=tcr_stub)
     out = Path(args["run_dir"]) / "report.html"
     out.write_text(html)
