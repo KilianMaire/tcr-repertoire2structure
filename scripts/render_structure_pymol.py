@@ -85,6 +85,55 @@ def _orient_tcr_up():
     cmd.set_view(new)
 
 
+def _orient_groove_topdown():
+    """Deterministic top-down groove view, built from geometry so every structure
+    lands in the same reading frame (unlike cmd.orient, which picks a per-structure
+    camera). Image-right = the peptide long axis (first principal component of the CA
+    trace), signed N-to-C so the N terminus is always left and C right; toward-viewer
+    = the peptide-plane normal (smallest principal component), signed to the TCR side
+    so the bulge points up out of the page. The peptide therefore lies flat and reads
+    left-to-right the same way in every panel."""
+    # PyMOL picks the natural, well-spread top-down of the peptide (long axis in
+    # plane, thinnest dimension toward the viewer); we only fix its 4-fold sign
+    # ambiguity so the frame is identical across structures.
+    cmd.orient("m and chain E")
+    tcr = cmd.centerofmass("m and (chain A or chain B)")
+    cas = cmd.get_model("m and chain E and name CA").atom
+    n_term, c_term = cas[0].coord, cas[-1].coord
+
+    def _screen_x(p):                                 # image-x of a model point (column 0)
+        v = cmd.get_view()
+        return v[0] * p[0] + v[3] * p[1] + v[6] * p[2]
+
+    def _screen_z(p):                                 # toward-viewer of a model point (column 2)
+        v = cmd.get_view()
+        return v[2] * p[0] + v[5] * p[1] + v[8] * p[2]
+
+    if _screen_x(c_term) < _screen_x(n_term):         # want C to the right, N to the left
+        cmd.turn("y", 180)
+    if _screen_z(tcr) < _screen_z(cmd.centerofmass("m and chain E")):  # view from the TCR side
+        cmd.turn("x", 180)
+
+
+def _label_termini():
+    """Prominent N and C tags just beyond the peptide termini so the reading
+    direction is explicit, not left to the (occludable) residue numbers. The tags
+    are pushed outward along the N-to-C axis so they clear the sticks and the
+    per-residue labels."""
+    cas = cmd.get_model("m and chain E and name CA").atom
+    n_term, c_term = cas[0].coord, cas[-1].coord
+    axis = _norm(_sub(c_term, n_term))
+    off = [4.0 * a for a in axis]
+    ends = (("N", n_term, [-off[i] for i in range(3)]),
+            ("C", c_term, off))
+    for tag, base, delta in ends:
+        name = f"term_{tag}"
+        cmd.pseudoatom(name, pos=[base[i] + delta[i] for i in range(3)], label=tag)
+        cmd.hide("nonbonded", name)
+        cmd.set("label_size", 36, name)
+        cmd.set("label_color", "0x111111", name)
+
+
 def render_complex(cif, out_dir):
     _base_scene(cif)
     cmd.show("cartoon", "m")
@@ -131,14 +180,15 @@ def render_groove_conf(cif, out_png, pmin=50, pmax=95):
     cmd.show("sticks", "m and chain E")
     cmd.set("stick_radius", 0.35, "m and chain E")
     cmd.spectrum("b", "red_white_blue", "m and chain E", minimum=pmin, maximum=pmax)
-    cmd.set("label_size", 20)
+    cmd.set("label_size", 19)
     cmd.set("label_color", "black")
     cmd.set("float_labels", 1)
     for at in cmd.get_model("m and chain E and name CA").atom:
         aa = ONE.get(at.resn, "X")
         cmd.label(f"m and chain E and name CA and resi {at.resi}", f'"{aa}{at.resi}"')
-    cmd.orient("(m and chain C within 12 of (m and chain E)) or (m and chain E)")
-    cmd.zoom("m and chain E", 4)
+    _orient_groove_topdown()
+    _label_termini()
+    cmd.zoom("m and chain E", 4.5)
     cmd.ray(1300, 950)
     cmd.png(out_png, dpi=200)
     print("rendered groove_conf", out_png)
