@@ -291,6 +291,16 @@ def test_list_structure_tools_returns_registry():
     assert names == {"protenix", "af3", "mhcfine", "tcrdock", "affinetune"}
 
 
+def test_list_structure_tools_text_carries_validity_domains():
+    # A sub-agent that only sees the text (not structuredContent) must still be able to
+    # route on the validity domain, not on the tool name as a prior.
+    res = _run(at.list_structure_tools.handler({"run_dir": "/tmp/whatever"}))
+    text = res["content"][0]["text"]
+    assert "protenix" in text and "[default]" in text
+    assert "needs_tcr=True" in text and "qc_metric=binding_score" in text  # tcrdock line
+    assert "mhc_class=[1]" in text                                          # mhcfine class I only
+
+
 def test_qc_structure_common_gate_fails_closed_on_missing_chains(tmp_path):
     # a mhcfine pose recorded but the CIF is a fixture missing chain C/E -> qc_failed
     rd = str(tmp_path / "run")

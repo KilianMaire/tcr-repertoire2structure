@@ -50,14 +50,25 @@ def _scramble_null(cognate_score_path):
 
 
 def scan_recorded_folds(run_dir, tool="protenix"):
-    """Find fold outputs already on disk under <run_dir>/out and group them per clonotype.
-    Protenix marks the construct in the DIRECTORY ({cid}_cognate / {cid}_scramble), not the
-    filename, so parse the cid from the top-level out/ dir. Resume path: the local_gpu bash
-    route wrote CIFs here directly, and a Colab download unzipped here has the same layout."""
+    """Find fold outputs already on disk under <run_dir>/out and group them per clonotype,
+    so the handoff/local resume path (record_local_folds -> QC) works for every tool, not
+    just Protenix. The on-disk shape is set by the tool's qc_metric: a structure tool leaves
+    CIFs, a binding-score tool leaves a per-construct .score file, and the two are laid out
+    differently, so dispatch on the metric. Resume path: the local_gpu bash route wrote the
+    outputs here directly, and a Colab download unzipped here has the same layout."""
     out = Path(run_dir) / "out"
-    found = {}
     if not out.exists():
-        return found
+        return {}
+    if structure_tools.qc_metric_for(tool) == "binding_score":
+        return _scan_score_folds(out, tool)
+    return _scan_structure_folds(out, tool)
+
+
+def _scan_structure_folds(out, tool):
+    """Structure tools (Protenix, af3): the construct is marked by the DIRECTORY
+    ({cid}_cognate / {cid}_scramble), not the filename, so parse the cid from the top-level
+    out/ dir and collect the CIFs inside it."""
+    found = {}
     for d in sorted(out.iterdir()):
         if not d.is_dir():
             continue
@@ -68,6 +79,19 @@ def scan_recorded_folds(run_dir, tool="protenix"):
                 if cifs:
                     found.setdefault(cid, {"paths": [], "tool": tool})
                     found[cid]["paths"].extend(cifs)
+    return found
+
+
+def _scan_score_folds(out, tool):
+    """Binding-score tools (tcrdock, affinetune): the construct is marked by the FILE
+    ({cid}_cognate.score, with a {cid}_scramble.score sibling in the same folder), not by a
+    _cognate/_scramble directory. Parse the cid from the filename and record the cognate
+    score path per clonotype; QC's _scramble_null reads the scramble sibling next to it."""
+    found = {}
+    for p in sorted(out.rglob("*_cognate.score")):
+        cid = p.name[: -len("_cognate.score")]
+        found.setdefault(cid, {"paths": [], "tool": tool})
+        found[cid]["paths"].append(str(p))
     return found
 
 
@@ -147,7 +171,18 @@ async def list_fold_jobs(args):
 @tool("list_structure_tools", "List the structure tools and their validity domains for the strategist.",
       {"run_dir": str})
 async def list_structure_tools(args):
-    r = _txt("structure tool registry")
+    # The actionable payload goes in the TEXT too, not only structuredContent: a nested
+    # sub-agent may only see the text, and routing on the tool NAME alone (a prior) instead
+    # of its validity domain is exactly the failure this avoids.
+    lines = []
+    for t in structure_tools.as_dicts():
+        v = t["validity"]
+        dflt = " [default]" if t["is_default"] else ""
+        lines.append(
+            f"- {t['name']}{dflt}: mhc_class={v['mhc_class']}, needs_tcr={v['needs_tcr']}, "
+            f"species={v['species']}, output={t['output_type']}, qc_metric={t['qc_metric']}")
+    r = _txt("structure tool registry (route each group to ONE tool by its validity "
+             "domain, not its name):\n" + "\n".join(lines))
     r["structuredContent"] = {"tools": structure_tools.as_dicts()}
     return r
 
@@ -157,7 +192,21 @@ async def list_structure_tools(args):
       "whether its runner is wired, so the intake agent asks the right questions.",
       {"run_dir": str})
 async def list_compute_routes(args):
-    r = _txt("compute route registry")
+    # Put the fields in the TEXT, not only structuredContent: the intake agent asks the user
+    # for exactly a route's required_fields, so if it only sees a one-line stub it invents
+    # fields (e.g. a Colab notebook_url that does not exist) and deadlocks. An empty
+    # required_fields list must read as "no extra fields", never as "unknown".
+    lines = []
+    for x in compute_routes.as_dicts():
+        req = ", ".join(x["required_fields"]) if x["required_fields"] else "none"
+        sec = ", ".join(x["secret_fields"]) if x["secret_fields"] else "none"
+        dflt = " [default]" if x["is_default"] else ""
+        lines.append(
+            f"- {x['name']}{dflt}: required_fields=[{req}], secret_fields=[{sec}], "
+            f"artifact={x['artifact_kind']}, runner_wired={x['wired']}")
+    r = _txt("compute route registry (collect EVERY required_field of the chosen route; "
+             "required_fields=[none] means the route needs no extra fields, so record it "
+             "as soon as it is chosen):\n" + "\n".join(lines))
     r["structuredContent"] = {"routes": compute_routes.as_dicts()}
     return r
 

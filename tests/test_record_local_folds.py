@@ -34,6 +34,34 @@ def test_record_local_folds_writes_the_folds_stage(tmp_path):
     assert "c0" in done and done["c0"]["tool"] == "protenix"
 
 
+def test_scan_finds_binding_score_folds_by_filename(tmp_path):
+    # tcrdock/affinetune write sibling {cid}_cognate.score / {cid}_scramble.score files in
+    # one folder, not _cognate/_scramble dirs; the scan must key on the filename.
+    out = tmp_path / "out"
+    out.mkdir(parents=True)
+    (out / "c0_cognate.score").write_text("-11.219\n")
+    (out / "c0_scramble.score").write_text("-20.574\n")
+    (out / "c1_cognate.score").write_text("-9.5\n")
+    found = agent_tools.scan_recorded_folds(str(tmp_path), tool="tcrdock")
+    assert set(found) == {"c0", "c1"}
+    assert found["c0"]["tool"] == "tcrdock"
+    # only the cognate path is recorded; QC's _scramble_null finds the scramble sibling
+    assert found["c0"]["paths"] == [str(out / "c0_cognate.score")]
+
+
+def test_record_local_folds_records_score_tool_from_disk(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir(parents=True)
+    (out / "c0_cognate.score").write_text("-11.219\n")
+    (out / "c0_scramble.score").write_text("-20.574\n")
+    r = asyncio.run(agent_tools.record_local_folds.handler(
+        {"run_dir": str(tmp_path), "tool": "tcrdock"}))
+    assert r["structuredContent"]["recorded"] == 1
+    done = RunState(str(tmp_path)).read_stage("folds")
+    assert done["c0"]["tool"] == "tcrdock"
+    assert done["c0"]["paths"][0].endswith("c0_cognate.score")
+
+
 def test_record_local_folds_does_not_clobber_existing(tmp_path):
     rs = RunState(str(tmp_path))
     rs.write_stage("folds", {"c0": {"paths": ["cloud/complete.cif"], "tool": "protenix"}})
