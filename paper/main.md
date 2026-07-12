@@ -168,9 +168,16 @@ it has not measured.
 
 Our claim is deliberately narrow. The held-out test moves to a second HLA allele and a
 second peptide set but stays within one donor, so it does not close the single-donor
-axis, and it uses one model family at a fixed setting. A stronger recognition signal
-may exist for other models, deeper multiple-sequence alignments, or explicit interface
-energetics, and nothing here rules that out. What the work does establish is a
+axis, and it uses one model family at a fixed setting. The held-out panel is also small
+by construction, and its power is the dominant caveat: with 18 reconstructed clonotypes a
+one-sided exact binomial at 0.05 can only reject at Top-1 0.72 or above, so the test
+carried roughly 0.2 power against an effect the size of the discovery estimate (0.61) and
+about 0.5 power even against 0.70. The negative is therefore a bound of the form not
+demonstrated at this sample size, not evidence that the recognition signal is zero;
+distinguishing a small genuine effect from none would take on the order of 130 held-out
+clonotypes to confirm a true 0.61, or 60 to confirm the discovery-scale 0.66. A stronger
+recognition signal may exist for other models, deeper multiple-sequence alignments, or
+explicit interface energetics, and nothing here rules that out. What the work does establish is a
 measurement discipline: fold matched panels that vary only the cognate assignment,
 pre-register the confirmation, keep a composition-scramble as the presentation null,
 and decompose the variance before believing a headline number. Under that discipline
