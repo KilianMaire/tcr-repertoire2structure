@@ -33,12 +33,16 @@ is the only figure that carries the headline finding and key numbers as text.
 | Fig S2 | `figS2_groove_confidence` | per-residue confidence, cognate vs scramble | `plot_supp_groove_conf.py` | committed renders `_groove_conf_*.png` |
 | Fig S3 | `figS3_chain_pair_iptm` | chain-pair interface confidence matrix | `plot_supp_chain_pair.py` | `data/chain_pair_iptm_example.csv` |
 | Fig S4 | `figS4_reproducibility` | per-sample reproducibility of the readouts | `plot_supp_reproducibility.py` | `data/per_sample_readouts.csv` |
-| Fig S5 | `figS5_complex_gallery` | gallery of complexes across epitopes | `plot_supp_gallery.py` | committed renders `_gallery{1..4}_*.png` |
+| Fig S5 | `figS5_complex_gallery` | gallery of complexes across epitopes, one canonical TCR-up orientation | `plot_supp_gallery.py` (composits) + `render_gallery.py` (selects and renders) | committed renders `_gallery{1..4}_*.png` |
 
 Committed intermediate renders (raw PyMOL PNGs prefixed `_`) let the structure
 figures rebuild without PyMOL installed. To regenerate a render, run
 `scripts/render_structure_pymol.py` in the pymol micromamba env (modes: complex,
-groove, groove_conf, interface, single). Per-sample and chain-pair CSVs come from
+groove, groove_conf, interface, single, single_uniform). The gallery renders are
+produced by `scripts/render_gallery.py`, which per epitope selects the best
+reconstructed cognate clonotype (highest TCR-to-peptide ipTM, poly-G stubs excluded)
+from the run manifests and renders it in the shared TCR-up frame, so the panel
+provenance is recorded rather than ad hoc. Per-sample and chain-pair CSVs come from
 `scripts/extract_supp_data.py` (run once, needs `runs/`).
 
 ## Significance reporting note

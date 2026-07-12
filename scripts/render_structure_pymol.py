@@ -134,6 +134,49 @@ def _label_termini():
         cmd.set("label_color", "0x111111", name)
 
 
+def _set_camera(right, up, view_dir):
+    """Set the camera rotation from an explicit orthonormal basis. PyMOL stores the
+    first nine view elements column-major, so the basis vectors go in as columns."""
+    v = cmd.get_view()
+    m = [right[0], up[0], view_dir[0],
+         right[1], up[1], view_dir[1],
+         right[2], up[2], view_dir[2]]
+    cmd.set_view(list(m) + list(v[9:]))
+
+
+def _orient_complex_uniform():
+    """Canonical whole-complex view shared by every gallery panel: the TCR sits above
+    the peptide-MHC platform (image-up = the docking axis), the peptide runs left to
+    right (image-right = the peptide N-to-C axis), and the camera looks from the side.
+    Built with the column-major set_view convention so the basis is applied, not its
+    transpose, which is what let earlier renders tilt differently per structure."""
+    cmd.orient("m")
+    tcr = cmd.centerofmass("m and (chain A or chain B)")
+    pep = cmd.centerofmass("m and chain E")
+    cas = cmd.get_model("m and chain E and name CA").atom
+    n_term, c_term = cas[0].coord, cas[-1].coord
+
+    up = _norm(_sub(tcr, pep))                        # TCR above the platform
+    right0 = _norm(_sub(c_term, n_term))              # peptide N to C, made horizontal
+    right = _norm(_sub(right0, [up[i] * _dot(right0, up) for i in range(3)]))
+    view_dir = _norm(_cross(right, up))
+    _set_camera(right, up, view_dir)
+
+
+def render_single_uniform(cif, out_png):
+    """Whole-complex gallery render in the canonical TCR-up frame."""
+    _base_scene(cif)
+    cmd.show("cartoon", "m")
+    _color_all()
+    cmd.show("sticks", "m and chain E")
+    cmd.set("stick_radius", 0.35, "m and chain E")
+    _orient_complex_uniform()
+    cmd.zoom("m", 3)
+    cmd.ray(1450, 1500)
+    cmd.png(out_png, dpi=200)
+    print("rendered single_uniform", out_png)
+
+
 def render_complex(cif, out_dir):
     _base_scene(cif)
     cmd.show("cartoon", "m")
@@ -237,7 +280,8 @@ DISPATCH = {"complex": lambda a: render_complex(a[0], a[1]),
             "groove": lambda a: render_groove(a[0], a[1]),
             "groove_conf": lambda a: render_groove_conf(a[0], a[1]),
             "interface": lambda a: render_interface(a[0], a[1]),
-            "single": lambda a: render_single(a[0], a[1])}
+            "single": lambda a: render_single(a[0], a[1]),
+            "single_uniform": lambda a: render_single_uniform(a[0], a[1])}
 
 if __name__ == "__main__":
     mode = sys.argv[1]
