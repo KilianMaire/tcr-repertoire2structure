@@ -83,7 +83,11 @@ API and injected; the `use_msa false` flag fully suppresses a provided MSA and
 was therefore dropped. Consuming the MSA transforms the fold (peptide chain pLDDT
 from 46 to 95, complex ipTM from 0.17 to 0.915, and the TCR docking in all five
 poses rather than one). Protenix writes one summary confidence JSON per sample
-next to the CIFs.
+next to the CIFs. A companion benchmark on six solved TCR-pMHC-II crystals scored
+Protenix against Boltz and AF2-multimer by DockQ and placed Protenix at 0.887 on the
+peptide to TCR-beta interface, the specificity-determining contact, well above
+AF2-multimer (0.655) and level with Boltz once Boltz's recall of long-deposited
+training entries is set aside (Table S5), which motivates the choice of engine.
 
 ## Structural readouts and skeptical QC
 

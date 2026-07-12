@@ -177,7 +177,24 @@ demonstrated at this sample size, not evidence that the recognition signal is ze
 distinguishing a small genuine effect from none would take on the order of 130 held-out
 clonotypes to confirm a true 0.61, or 60 to confirm the discovery-scale 0.66. A stronger
 recognition signal may exist for other models, deeper multiple-sequence alignments, or
-explicit interface energetics, and nothing here rules that out. What the work does establish is a
+explicit interface energetics, and nothing here rules that out.
+
+A companion benchmark in a different system converges on the same boundary and supplies
+the cross-model check the single held-out test cannot provide on its own. On murine
+TCR-pMHC-II complexes for a house dust mite allergen, an interface-confidence contrast
+between a cognate fold and its CDR3 scramble was run across three folding engines,
+Protenix, Boltz, and AF2-multimer. All three flag the known non-binders at least as
+often as the true binders: scrambling a CDR3 degrades the predicted interface for any
+receptor, on any engine, regardless of interface accuracy or training exposure, so the
+apparent recognition signal is a generic perturbation artefact rather than specificity.
+The failure to read recognition off interface confidence is therefore not specific to
+Protenix or to one MHC class. The systems and the probe differ from ours (mouse rather
+than human, class II rather than class I, a CDR3 scramble rather than a four-way epitope
+retrieval), so this is convergent external evidence for the shared conclusion, that an
+interface-confidence contrast does not by itself measure recognition and that proper
+negative controls are required to see it, not a replication of the retrieval test.
+
+What the work does establish is a
 measurement discipline: fold matched panels that vary only the cognate assignment,
 pre-register the confirmation, keep a composition-scramble as the presentation null,
 and decompose the variance before believing a headline number. Under that discipline

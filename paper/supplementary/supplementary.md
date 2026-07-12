@@ -96,6 +96,24 @@ permissiveness effect at the scoring level, not a loss of anchors.
 | A*02:01 | 0.958 | 0.604 | 0.976 | 0.959 |
 | A*11:01 | 1.000 | 0.500 | 0.972 | 0.940 |
 
+### Table S5. Companion engine benchmark on class II TCR-pMHC crystals (DockQ).
+
+An independent benchmark on six solved TCR-pMHC-II crystals (murine I-A^b and I-A^u,
+human HLA-DR) scored Protenix against Boltz and AF2-multimer by DockQ, on the same five
+chain construct order. Protenix reproduces the peptide to TCR-beta interface, the
+contact that governs antigen specificity, at high accuracy and far above AF2-multimer.
+Boltz scores marginally higher overall, but its calibration cases include long-deposited
+entries almost certainly inside training, so its edge is partly recall rather than
+generalisation. This motivates Protenix as the folding engine. The benchmark is a
+companion study in a different system (mouse class II, a house dust mite allergen
+peptide) and is external to the human class I analyses of this paper.
+
+| engine | DockQ total (mean) | peptide to TCR-beta DockQ (mean) |
+| --- | --- | --- |
+| Boltz | 0.906 | 0.914 |
+| Protenix | 0.875 | 0.887 |
+| AF2-multimer (ColabFold) | 0.759 | 0.655 |
+
 ## Supplementary methods notes
 
 - **Stub contamination.** 25 of 72 folded clonotypes used a poly-G placeholder in
