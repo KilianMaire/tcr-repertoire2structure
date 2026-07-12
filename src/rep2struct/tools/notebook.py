@@ -433,6 +433,11 @@ _WIRED = {"mhcfine": _mhcfine_notebook, "affinetune": _affinetune_notebook,
           "tcrdock": _tcrdock_notebook, "protenix": _protenix_notebook}
 
 
+def is_tool_wired(tool: str) -> bool:
+    """True if the tool has a real Colab recipe (not a fail-loud stub, e.g. the gated af3)."""
+    return tool in _WIRED
+
+
 def build_notebook(tool: str, inputs: dict) -> dict:
     """Return a self-contained Colab notebook for a fold tool. Validated tools get their
     real recipe; unwired tools get a fail-loud scaffold (never a faked result)."""

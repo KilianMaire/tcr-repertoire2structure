@@ -37,8 +37,11 @@ async def run_session(run_dir: str, top_n: int = 8) -> None:
         opts = build_options(run_dir, mode="handoff")
         async with ClaudeSDKClient(options=opts) as client:
             await client.query(
-                f"Run the intake interview for run_dir {run_dir} using the intake-agent, "
-                f"then call record_intake and proceed to the handoff orchestration.")
+                f"Run the intake interview for run_dir {run_dir} using the intake-agent, then "
+                f"call record_intake. After the brief is recorded, proceed to the handoff "
+                f"orchestration: ingest_repertoire, annotate_specificity, prep_and_select with "
+                f"top_n {top_n}, then the structure-strategist and each tool's executor to build "
+                f"the fold artifacts, and stop.")
             # Interactive loop: the agent asks, the user answers on stdin, until the run ends.
             while True:
                 await _drain(client)

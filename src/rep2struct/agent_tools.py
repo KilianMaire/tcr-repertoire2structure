@@ -130,6 +130,18 @@ async def annotate_specificity(args):
 @tool("prep_and_select", "Rank clonotypes and build class I fold constructs for the top N.",
       {"run_dir": str, "top_n": int})
 async def prep_and_select(args):
+    rs = RunState(args["run_dir"])
+    # Checkpoint: once foldjobs exist, this stage is immutable (like list_fold_jobs treats the
+    # folds stage). A resume run must NOT recompute it: doing so would wipe the strategist's
+    # persisted per-group tool tags and the per-clonotype MSA, and a different top_n would
+    # re-select a different set after folds already exist, silently dropping folded clonotypes
+    # from the report. Return the existing selection unchanged.
+    if rs.stage_done("foldjobs"):
+        jobs = rs.read_stage("foldjobs")
+        r = _txt(f"foldjobs already prepared ({len(jobs)} jobs); keeping the existing selection "
+                 f"and the strategist's tool assignments (rerun in a fresh run_dir to re-select)")
+        r["structuredContent"] = {"jobs": [j["clonotype_id"] for j in jobs], "reused": True}
+        return r
     clons = _load(args["run_dir"], "ingest", Clonotype)
     anns = _load(args["run_dir"], "annotate", Annotation)
     top = select_top(clons, anns, n=args["top_n"])
@@ -297,10 +309,14 @@ def _write_artifact(run_dir, stem, tool, inputs, route):
     kind = compute_routes.artifact_kind_for(route)
     wired = compute_routes.is_wired(route)
     if kind == "colab_notebook":
+        from .tools.notebook import is_tool_wired
         nb_dir = Path(run_dir) / "notebooks"
         nb_dir.mkdir(parents=True, exist_ok=True)
         out = nb_dir / f"{stem}.ipynb"
         out.write_text(_json.dumps(build_notebook(tool, inputs), indent=1))
+        # A gated tool (af3) yields a fail-loud stub notebook, not a runnable recipe; report it
+        # as not wired so the executor hands it over honestly instead of claiming it will run.
+        wired = wired and is_tool_wired(tool)
     else:  # bash_script (local_gpu, and the honest ssh/server handoff)
         sc_dir = Path(run_dir) / "scripts"
         sc_dir.mkdir(parents=True, exist_ok=True)
@@ -523,15 +539,20 @@ async def qc_structure(args):
             cognate = [p for p in paths if "_cognate" in str(p)]
             scramble = [p for p in paths if "_scramble" in str(p)]
             if cognate:
-                cog, _, _ = ensemble_contact(cognate)
+                cog, _, n_valid = ensemble_contact(cognate)
                 scr, _, _ = ensemble_contact(scramble) if scramble else (None, 0, 0)
                 thr = scr if scr is not None else args["scramble_threshold"]
-                s = {"cdr3_pep_atoms": cog, "n_chains": 5, "clonotype_id": args["clonotype_id"]}
+                if cog is None:  # no cognate sample parsed to a full 5-chain complex
+                    res = QCResult(args["clonotype_id"], "qc_failed",
+                                   "no cognate sample parsed to a full 5-chain TCR-pMHC")
+                else:
+                    s = {"cdr3_pep_atoms": cog, "n_chains": 5,
+                         "clonotype_id": args["clonotype_id"]}
+                    res = verdict(s, thr)
             else:
                 s = score_model(paths[0])
                 s["clonotype_id"] = args["clonotype_id"]
-                thr = args["scramble_threshold"]
-            res = verdict(s, thr)
+                res = verdict(s, args["scramble_threshold"])
             res.tool = tool
             res.calibration_basis = "scramble_null"
     # Honesty guard: a clonotype folded on a poly-G stub V-domain (germline reconstruction

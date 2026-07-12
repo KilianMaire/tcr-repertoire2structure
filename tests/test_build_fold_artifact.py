@@ -125,6 +125,17 @@ def test_group_bash_route_fails_loud_for_non_protenix_tool(tmp_path):
     assert "no bash runner wired for tcrdock" in body and "exit 1" in body
 
 
+def test_colab_af3_stub_reports_not_wired(tmp_path):
+    # af3 has no real Colab recipe (gated weights) -> stub notebook, must not claim wired
+    rd = str(tmp_path)
+    RunState(rd).write_stage("foldjobs", [
+        {"clonotype_id": "c0", "construct_fasta": _fasta("GILGFVFTL"), "group_id": "g0",
+         "tool": "af3"}])
+    r = asyncio.run(agent_tools.build_group_artifact.handler(
+        {"run_dir": rd, "group_id": "g0", "tool": "af3", "compute_route": "colab"}))
+    assert r["structuredContent"]["route_wired"] is False
+
+
 def test_group_artifact_rejects_tool_mismatch_with_persisted(tmp_path):
     rd = str(tmp_path)
     RunState(rd).write_stage("foldjobs", [

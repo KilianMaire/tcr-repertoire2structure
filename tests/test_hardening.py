@@ -32,6 +32,22 @@ def test_assign_group_tool_persists_tool_onto_group_jobs(tmp_path):
     assert "tool=tcrdock" in listed["content"][0]["text"]
 
 
+# --- prep_and_select is an immutable checkpoint: resume must not clobber it ------
+
+def test_prep_and_select_does_not_clobber_existing_foldjobs(tmp_path):
+    rd = str(tmp_path)
+    rs = RunState(rd)
+    # a resume-state foldjobs stage carrying the strategist's persisted tool + MSA
+    rs.write_stage("foldjobs", [
+        FoldJob(clonotype_id="c1", construct_fasta="x", group_id="G1", tool="tcrdock",
+                msa_basis="colab_cpu:2/5")])
+    r = _run(at.prep_and_select.handler({"run_dir": rd, "top_n": 50}))
+    assert r["structuredContent"].get("reused") is True
+    jobs = rs.read_stage("foldjobs")
+    assert len(jobs) == 1 and jobs[0]["tool"] == "tcrdock"        # tag preserved
+    assert jobs[0]["msa_basis"] == "colab_cpu:2/5"                # MSA preserved
+
+
 # --- Class II is derived from the HLA and refused, not silently mis-modelled ---
 
 def test_mhc_class_of_hla():
