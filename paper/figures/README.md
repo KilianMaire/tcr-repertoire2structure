@@ -6,6 +6,14 @@ result text on the plot, bold panel tags, PDF plus PNG output) and regenerates f
 committed data with no GPU. Structure panels embed committed PyMOL renders, so the
 compositors run without the PyMOL env.
 
+## Graphical abstract
+
+`graphical_abstract` (`plot_graphical_abstract.py`): the one self-contained visual.
+Input structure, then the two specificity questions, presentation answered (cognate
+vs scramble groove by per-residue pLDDT, AUROC up to 0.99) and recognition not
+(held-out 0.61, 11/18, p 0.24), then the one-line takeaway. Being caption-free, it
+is the only figure that carries the headline finding and key numbers as text.
+
 ## Main figures (dense multi-panel)
 
 | figure | file | message | script | data |
