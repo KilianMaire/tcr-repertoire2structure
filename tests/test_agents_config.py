@@ -18,7 +18,8 @@ def test_strategist_reads_registry_and_can_delegate():
 def test_strategist_exact_tools_and_model():
     a = build_agents()["structure-strategist"]
     assert set(a.tools) == {"mcp__rep2struct__list_structure_tools",
-                            "mcp__rep2struct__list_fold_jobs", "Agent"}
+                            "mcp__rep2struct__list_fold_jobs",
+                            "mcp__rep2struct__assign_group_tool", "Agent"}
     assert a.model == "opus"
 
 

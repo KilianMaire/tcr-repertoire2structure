@@ -5,6 +5,7 @@
  table{border-collapse:collapse;width:100%} th,td{border:1px solid #cbd5e0;padding:.4rem .6rem;text-align:left}
  .reliable{color:#2f855a;font-weight:600} .suspect{color:#c05621;font-weight:600} .qc_failed{color:#718096}
  .unann{color:#718096;font-style:italic} .val{background:#f0fff4;border:1px solid #2f855a;padding:1rem;margin:1rem 0;border-radius:8px}
+ .stub{color:#c05621;font-size:.8rem;font-weight:600;border:1px solid #c05621;border-radius:4px;padding:0 .3rem;margin-left:.3rem}
 </style></head><body>
 <h1>Repertoire2Structure report</h1>
 {% if metrics %}<div class="val"><b>Validation.</b>
@@ -14,7 +15,7 @@
  (n={{ metrics.n }})</div>{% endif %}
 <table><thead><tr><th>clonotype</th><th>size</th><th>epitope</th><th>tier</th><th>QC</th><th>Evidence</th><th>Tool</th><th>MSA</th><th>Validity (common)</th></tr></thead><tbody>
 {% for row in rows %}<tr>
- <td>{{ row.id }}</td><td>{{ row.size }}</td>
+ <td>{{ row.id }}{% if row.tcr_stub %}<span class="stub" title="poly-G stub V-domain; germline reconstruction failed, not a real TCR">stub V</span>{% endif %}</td><td>{{ row.size }}</td>
  <td>{% if row.annotatable %}{{ row.epitope }} <small>({{ row.hla }})</small>{% else %}<span class="unann">unannotatable</span>{% endif %}</td>
  <td>{{ row.tier }}</td>
  <td class="{{ row.qc }}">{{ row.qc }}</td>

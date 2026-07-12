@@ -103,6 +103,9 @@ def _load(rd, name, cls):
 @tool("ingest_repertoire", "Parse a 10x contig CSV into paired clonotypes and persist them.",
       {"run_dir": str, "csv_path": str})
 async def ingest_repertoire(args):
+    if not Path(args["csv_path"]).exists():
+        return _txt(f"input CSV not found: {args['csv_path']} (give the intake agent a real "
+                    f"path, or drop the file into the run folder)")
     clons = standardize_alleles(parse_10x(args["csv_path"]), assign_fn=_CFG["assign_fn"])
     RunState(args["run_dir"]).write_stage("ingest", clons)
     r = _txt(f"{len(clons)} clonotypes ingested")
@@ -141,7 +144,10 @@ async def prep_and_select(args):
     # resolved to a heavy chain get no fold job.
     seqs = build_tcr_seqs([c for c, _ in foldable])
     mhc = build_mhc_seqs(sorted({a.hla for _, a in foldable}))
-    jobs = [build_construct(c, a, seqs, mhc) for c, a in foldable if a.hla in mhc]
+    # build_construct returns None for a class II allele (the class I A-E+b2m construct cannot
+    # represent it), so filter those out rather than folding a wrong complex.
+    jobs = [j for j in (build_construct(c, a, seqs, mhc)
+                        for c, a in foldable if a.hla in mhc) if j is not None]
     partition(jobs)  # stamps group_id on each job in place
     for j in jobs:   # MSA is a pre-fold artifact; no runners here = MSA-free default
         j.msa_ref, j.msa_basis = build_msa(j, args["run_dir"])
@@ -176,6 +182,24 @@ async def list_fold_jobs(args):
     head = f"{len(jobs)} jobs ({n_pending} pending, {len(jobs) - n_pending} done)"
     r = _txt(head + (":\n" + "\n".join(lines) if lines else ""))
     r["structuredContent"] = {"jobs": jobs, "pending": n_pending}
+    return r
+
+
+@tool("assign_group_tool",
+      "Persist the tool the strategist chose for a group onto its fold jobs, so the executor "
+      "filters on the tag by fact and the report shows the right tool per group.",
+      {"run_dir": str, "group_id": str, "tool": str})
+async def assign_group_tool(args):
+    rs = RunState(args["run_dir"])
+    jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
+    n = 0
+    for j in jobs:
+        if j.get("group_id") == args["group_id"]:
+            j["tool"] = args["tool"]
+            n += 1
+    rs.write_stage("foldjobs", jobs)
+    r = _txt(f"assigned {args['tool']} to {n} jobs in group {args['group_id']}")
+    r["structuredContent"] = {"assigned": n, "tool": args["tool"], "group_id": args["group_id"]}
     return r
 
 
@@ -252,6 +276,41 @@ def _fold_inputs(tool: str, job: dict, clonotype_id: str, clon=None, ann=None) -
     return {"construct_fasta": fasta}
 
 
+def _tcrdock_ctx(run_dir, cid, tool):
+    """tcrdock needs the gene-level Clonotype+Annotation (the FoldJob keeps only construct_fasta),
+    so read them back from the persisted stages. (None, None) for every other tool."""
+    if tool != "tcrdock":
+        return None, None
+    clon = next((c for c in _load(run_dir, "ingest", Clonotype) if c.id == cid), None)
+    ann = next((a for a in _load(run_dir, "annotate", Annotation) if a.clonotype_id == cid), None)
+    return clon, ann
+
+
+def _write_artifact(run_dir, stem, tool, inputs, route):
+    """Write ONE fold artifact (Colab notebook or bash script, chosen by the route) for the given
+    inputs and return (path, kind, wired). Shared by the per-clonotype and per-group tools; the
+    notebook/script builders already loop over the inputs dict, so merged multi-clonotype inputs
+    fold in a single run."""
+    import json as _json
+    from .tools.notebook import build_notebook
+    from .tools.protenix_script import build as build_script
+    kind = compute_routes.artifact_kind_for(route)
+    wired = compute_routes.is_wired(route)
+    if kind == "colab_notebook":
+        nb_dir = Path(run_dir) / "notebooks"
+        nb_dir.mkdir(parents=True, exist_ok=True)
+        out = nb_dir / f"{stem}.ipynb"
+        out.write_text(_json.dumps(build_notebook(tool, inputs), indent=1))
+    else:  # bash_script (local_gpu, and the honest ssh/server handoff)
+        spec = intake.load_intake(run_dir)
+        working = (spec.route_params.get("working_path") if spec else None) or "."
+        sc_dir = Path(run_dir) / "scripts"
+        sc_dir.mkdir(parents=True, exist_ok=True)
+        out = sc_dir / f"{stem}.sh"
+        out.write_text(build_script(inputs, working_path=working))
+    return out, kind, wired
+
+
 @tool("build_fold_notebook",
       "Build the Colab notebook for one clonotype's fold job, write it under the run dir, and return its path.",
       {"run_dir": str, "clonotype_id": str, "tool": str})
@@ -288,45 +347,47 @@ async def build_fold_notebook(args):
       "chosen by the compute route, write it under the run dir, and return its path.",
       {"run_dir": str, "clonotype_id": str, "tool": str, "compute_route": str})
 async def build_fold_artifact(args):
-    import json as _json
-    from .tools.notebook import build_notebook
-    from .tools.protenix_script import build as build_script
     rs = RunState(args["run_dir"])
     jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
     cid = args["clonotype_id"]
     job = next((j for j in jobs if j["clonotype_id"] == cid), None)
     if job is None:
         return _txt(f"no fold job for {cid}")
-    tool = args["tool"]
-    route = args["compute_route"]
-    kind = compute_routes.artifact_kind_for(route)
-    wired = compute_routes.is_wired(route)
-    # tcrdock needs the gene-level Clonotype+Annotation (see build_fold_notebook); read them
-    # back only when needed so the artifact inputs match the notebook path exactly.
-    clon = ann = None
-    if tool == "tcrdock":
-        clon = next((c for c in _load(args["run_dir"], "ingest", Clonotype) if c.id == cid), None)
-        ann = next((a for a in _load(args["run_dir"], "annotate", Annotation)
-                    if a.clonotype_id == cid), None)
+    tool, route = args["tool"], args["compute_route"]
+    clon, ann = _tcrdock_ctx(args["run_dir"], cid, tool)
     inputs = _fold_inputs(tool, job, cid, clon, ann)
-    if kind == "colab_notebook":
-        nb = build_notebook(tool, inputs)
-        nb_dir = Path(args["run_dir"]) / "notebooks"
-        nb_dir.mkdir(parents=True, exist_ok=True)
-        out = nb_dir / f"{cid}_{tool}.ipynb"
-        out.write_text(_json.dumps(nb, indent=1))
-    else:  # bash_script (local_gpu, and the honest ssh/server handoff)
-        spec = intake.load_intake(args["run_dir"])
-        working = (spec.route_params.get("working_path") if spec else None) or "."
-        script = build_script(inputs, working_path=working)
-        sc_dir = Path(args["run_dir"]) / "scripts"
-        sc_dir.mkdir(parents=True, exist_ok=True)
-        out = sc_dir / f"{cid}_{tool}.sh"
-        out.write_text(script)
+    out, kind, wired = _write_artifact(args["run_dir"], f"{cid}_{tool}", tool, inputs, route)
     note = "" if wired else f" (route '{route}' runner not wired; run the script yourself)"
     r = _txt(f"{kind} for {cid} ({tool}) via {route} written to {out}{note}")
     r["structuredContent"] = {"artifact_path": str(out), "artifact_kind": kind,
                               "route_wired": wired, "clonotype_id": cid, "tool": tool}
+    return r
+
+
+@tool("build_group_artifact",
+      "Build ONE fold artifact (Colab notebook or bash script) that folds a WHOLE group's pending "
+      "clonotypes in a single run, chosen by the compute route. Use this instead of one artifact "
+      "per clonotype so a researcher uploads/runs one notebook per group, not one per TCR.",
+      {"run_dir": str, "group_id": str, "tool": str, "compute_route": str})
+async def build_group_artifact(args):
+    rs = RunState(args["run_dir"])
+    jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
+    done = rs.read_stage("folds") if rs.stage_done("folds") else {}
+    gid, tool, route = args["group_id"], args["tool"], args["compute_route"]
+    pend = [j for j in jobs if j.get("group_id") == gid and j["clonotype_id"] not in done]
+    if not pend:
+        return _txt(f"no pending fold jobs in group {gid}")
+    merged = {}
+    for j in pend:
+        cid = j["clonotype_id"]
+        clon, ann = _tcrdock_ctx(args["run_dir"], cid, tool)
+        merged.update(_fold_inputs(tool, j, cid, clon, ann))
+    out, kind, wired = _write_artifact(args["run_dir"], f"{gid}_{tool}", tool, merged, route)
+    note = "" if wired else f" (route '{route}' runner not wired; run it yourself)"
+    cids = [j["clonotype_id"] for j in pend]
+    r = _txt(f"{kind} for group {gid} ({len(cids)} clonotypes, {tool}) via {route} written to {out}{note}")
+    r["structuredContent"] = {"artifact_path": str(out), "artifact_kind": kind, "route_wired": wired,
+                              "clonotypes": cids, "tool": tool, "group_id": gid}
     return r
 
 
@@ -374,16 +435,24 @@ async def qc_structure(args):
         res = QCResult(args["clonotype_id"], "qc_failed", "no model recorded", tool=tool)
         validity_summary = "no model"
     elif metric == "binding_score":
-        score = float(Path(paths[0]).read_text().strip())
-        # Set the threshold from this group's OWN scramble null (the sibling scramble score the
-        # fold wrote), never a global number; fall back to the caller's explicit threshold only
-        # if that scramble file is absent. tcrdock's validated flu M1 null: cognate score
-        # -11.219 beats scramble -20.574 (interface PAE 11.2 vs 20.6).
-        threshold = _scramble_null(paths[0])
-        if threshold is None:
-            threshold = args["scramble_threshold"]
-        res = verdict_binding(score, threshold, args["clonotype_id"], tool=tool)
-        validity_summary = "n/a (binding score)"
+        try:
+            score = float(Path(paths[0]).read_text().strip())
+        except (ValueError, OSError):
+            # A corrupt/empty .score (a truncated download) must fail this ONE clonotype, not
+            # crash the QC tool mid-run and abort every remaining clonotype.
+            res = QCResult(args["clonotype_id"], "qc_failed",
+                           f"unreadable score file {Path(paths[0]).name}", tool=tool)
+            validity_summary = "no score"
+        else:
+            # Set the threshold from this group's OWN scramble null (the sibling scramble score the
+            # fold wrote), never a global number; fall back to the caller's explicit threshold only
+            # if that scramble file is absent. tcrdock's validated flu M1 null: cognate score
+            # -11.219 beats scramble -20.574 (interface PAE 11.2 vs 20.6).
+            threshold = _scramble_null(paths[0])
+            if threshold is None:
+                threshold = args["scramble_threshold"]
+            res = verdict_binding(score, threshold, args["clonotype_id"], tool=tool)
+            validity_summary = "n/a (binding score)"
     else:
         # cdr3_peptide needs the full TCR-pMHC (A-E); peptide_groove is an mhcfine
         # pose = MHC heavy (C) + peptide (E) only, with no b2m/TCR modelled.
@@ -422,6 +491,15 @@ async def qc_structure(args):
             res = verdict(s, thr)
             res.tool = tool
             res.calibration_basis = "scramble_null"
+    # Honesty guard: a clonotype folded on a poly-G stub V-domain (germline reconstruction
+    # failed) is not a real TCR, so it can never earn a positive verdict no matter how the
+    # fold scored. Downgrade reliable/presented to suspect and say why.
+    job = next((j for j in (rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else [])
+                if j["clonotype_id"] == args["clonotype_id"]), None)
+    if job is not None and not job.get("tcr_reconstructed", True) and \
+            res.qc_verdict in ("reliable", "presented"):
+        res.qc_verdict = "suspect"
+        res.reason = "V-domain was a poly-G stub (germline reconstruction failed), not a real TCR"
     qcs = rs.read_stage("qc") if rs.stage_done("qc") else []
     qcs = [q for q in qcs if q["clonotype_id"] != res.clonotype_id]
     qcs.append(asdict(res))
@@ -472,7 +550,11 @@ async def render_final_report(args):
         for j in fjs
     }
     validity = rs.read_stage("validity") if rs.stage_done("validity") else {}
-    html = render_report(clons, anns, qcs, msa_basis=msa_basis, validity=validity)
+    # A clonotype folded on a poly-G stub V-domain is flagged so the report never presents a
+    # fabricated framework as a real TCR (QC already caps its verdict).
+    tcr_stub = {j["clonotype_id"]: not j.get("tcr_reconstructed", True) for j in fjs}
+    html = render_report(clons, anns, qcs, msa_basis=msa_basis, validity=validity,
+                         tcr_stub=tcr_stub)
     out = Path(args["run_dir"]) / "report.html"
     out.write_text(html)
     r = _txt(f"report written to {out}")
@@ -483,6 +565,7 @@ async def render_final_report(args):
 def build_server():
     return create_sdk_mcp_server(name="rep2struct", version="0.1.0", tools=[
         ingest_repertoire, annotate_specificity, prep_and_select, list_fold_jobs,
-        list_structure_tools, list_compute_routes, build_fold_notebook, build_fold_artifact, record_fold_result,
+        assign_group_tool, list_structure_tools, list_compute_routes, build_fold_notebook,
+        build_fold_artifact, build_group_artifact, record_fold_result,
         record_local_folds, qc_structure, render_final_report, record_intake,
     ])

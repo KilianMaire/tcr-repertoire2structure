@@ -40,6 +40,7 @@ class FoldJob:
     tool: Optional[str] = None   # tool the strategist assigned
     group_id: Optional[str] = None
     msa_basis: Optional[str] = None   # local | colab_cpu | none
+    tcr_reconstructed: bool = True    # False = poly-G stub V-domain, not a real germline reconstruction
 
 @dataclass
 class QCResult:

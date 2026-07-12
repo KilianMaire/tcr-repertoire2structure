@@ -35,7 +35,10 @@ def run_pipeline(csv_path, run_dir, top_n, sim_fn=None, assign_fn=None, fold_fn=
     # cannot resolve, so fold only clonotypes whose HLA has a heavy chain.
     seqs = tcr_seqs or build_tcr_seqs([c for c, _ in foldable])
     mhc = mhc_seqs or build_mhc_seqs(sorted({a.hla for _, a in foldable}))
-    jobs = [build_construct(c, a, seqs, mhc) for c, a in foldable if a.hla in mhc]
+    # build_construct returns None for a class II allele (unrepresentable by the class I
+    # construct); drop those so they get no fold job rather than a mis-modelled complex.
+    jobs = [j for j in (build_construct(c, a, seqs, mhc)
+                        for c, a in foldable if a.hla in mhc) if j is not None]
     jobs = run_folds(jobs, fold_fn, rs)
 
     qcs = []

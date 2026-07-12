@@ -138,8 +138,9 @@ def reconstruct_variable_domains(clonotype, species: str = "human") -> dict:
 
 
 def _tcr_stub(clonotype) -> dict:
-    """Last resort so a run never crashes: poly-G framework plus the real CDR3.
-    Clearly not a real V domain; the report flags any clonotype that used it."""
+    """Last resort so a run never crashes: poly-G framework plus the real CDR3. Clearly not a
+    real V domain; reconstructed=False rides on the FoldJob so QC can never grade it reliable
+    and the report flags it as a stub."""
     return {"A": "G" * 10 + clonotype.cdr3a, "B": "G" * 10 + clonotype.cdr3b,
             "reconstructed": False}
 

@@ -39,11 +39,12 @@ def _msa_note(basis) -> str:
 
 
 def render_report(clonotypes, annotations, qc_results, metrics=None, msa_basis=None,
-                   validity=None) -> str:
+                   validity=None, tcr_stub=None) -> str:
     ann = {a.clonotype_id: a for a in annotations}
     qc = {q.clonotype_id: q for q in qc_results}
     msa_basis = msa_basis or {}
     validity = validity or {}
+    tcr_stub = tcr_stub or {}
     rows = []
     # Keep clonotype input order; never sort by a raw numeric field
     # (e.g. cdr3_pep_atoms) so distances are never presented as a ranking.
@@ -61,6 +62,7 @@ def render_report(clonotypes, annotations, qc_results, metrics=None, msa_basis=N
             "evidence": EVIDENCE.get(q.qc_verdict, "structure") if q else "n/a",
             "msa_note": _msa_note(msa_basis.get(c.id)) if q else None,
             "validity": validity.get(c.id, "n/a"),
+            "tcr_stub": bool(tcr_stub.get(c.id)),
         })
     env = Environment(loader=FileSystemLoader(str(_TPL_DIR)),
                       autoescape=select_autoescape(["html"]))

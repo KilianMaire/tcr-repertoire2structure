@@ -58,3 +58,37 @@ def test_unwired_ssh_route_still_scripts_but_flags_not_wired(tmp_path):
     assert sc["artifact_kind"] == "bash_script"
     assert sc["route_wired"] is False
     assert Path(sc["artifact_path"]).exists()
+
+
+def _fasta(pep):
+    return f">A\nAAAA\n>B\nBBBB\n>C\nCCCC\n>D\nDDDD\n>E\n{pep}\n"
+
+
+def test_group_artifact_batches_all_clonotypes_into_one_notebook(tmp_path):
+    rd = str(tmp_path)
+    RunState(rd).write_stage("foldjobs", [
+        {"clonotype_id": "c0", "construct_fasta": _fasta("GILGFVFTL"), "group_id": "g0"},
+        {"clonotype_id": "c1", "construct_fasta": _fasta("NLVPMVATV"), "group_id": "g0"},
+        {"clonotype_id": "c2", "construct_fasta": _fasta("ELAGIGILTV"), "group_id": "g1"},
+    ])
+    r = asyncio.run(agent_tools.build_group_artifact.handler(
+        {"run_dir": rd, "group_id": "g0", "tool": "protenix", "compute_route": "colab"}))
+    sc = r["structuredContent"]
+    assert sc["artifact_kind"] == "colab_notebook"
+    assert sorted(sc["clonotypes"]) == ["c0", "c1"]          # both group-0 clonotypes, not c2
+    assert sc["artifact_path"].endswith("g0_protenix.ipynb")  # named by group, one file
+    body = Path(sc["artifact_path"]).read_text()
+    assert "c0_cognate" in body and "c1_cognate" in body      # merged into one notebook
+    assert "c2_cognate" not in body                            # other group excluded
+
+
+def test_group_artifact_skips_already_folded_clonotypes(tmp_path):
+    rd = str(tmp_path)
+    RunState(rd).write_stage("foldjobs", [
+        {"clonotype_id": "c0", "construct_fasta": _fasta("GILGFVFTL"), "group_id": "g0"},
+        {"clonotype_id": "c1", "construct_fasta": _fasta("NLVPMVATV"), "group_id": "g0"},
+    ])
+    RunState(rd).write_stage("folds", {"c0": {"paths": ["x.cif"], "tool": "protenix"}})
+    r = asyncio.run(agent_tools.build_group_artifact.handler(
+        {"run_dir": rd, "group_id": "g0", "tool": "protenix", "compute_route": "colab"}))
+    assert r["structuredContent"]["clonotypes"] == ["c1"]  # c0 already done, only c1 pending

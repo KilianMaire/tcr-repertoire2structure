@@ -8,24 +8,25 @@ _EXEC_TOOLS = ["mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__build_fold_n
 
 
 _HANDOFF_EXEC_TOOLS = ["mcp__rep2struct__list_fold_jobs",
-                       "mcp__rep2struct__build_fold_artifact"]
+                       "mcp__rep2struct__build_group_artifact"]
 
 
 def _handoff_executor(name, tool):
     return AgentDefinition(
-        description=f"{name}: builds the {tool} fold artifact for its group and stops "
+        description=f"{name}: builds ONE {tool} fold artifact per group and stops "
                     f"for the user to run it.",
         prompt=(
             f"You prepare the {tool} folds for the jobs assigned to your group; you do NOT "
-            f"run them. Call list_fold_jobs, and for each job whose tool is '{tool}' AND "
-            f"whose done is false: call build_fold_artifact with tool='{tool}' and the run's "
-            f"compute_route to write that job's self-contained artifact (a Colab notebook or "
-            f"a local bash script, chosen by the route) and get its path. Report each "
-            f"artifact path to the user with one line on how to run it: for a Colab notebook, "
-            f"upload it and run the cells; for a bash script, run it on the target machine. "
-            f"If build_fold_artifact reports route_wired false, say plainly the route runner "
-            f"is not wired and hand over the script for the user to run. Never fabricate a "
-            f"model or a score, and never open a browser."),
+            f"run them. Call list_fold_jobs. For each DISTINCT group_id whose jobs are "
+            f"tool='{tool}' and not done, call build_group_artifact ONCE with that group_id, "
+            f"tool='{tool}', and the run's compute_route: it writes a SINGLE self-contained "
+            f"artifact (a Colab notebook or a local bash script, chosen by the route) that "
+            f"folds every pending clonotype in the group in one run, so the user uploads/runs "
+            f"one artifact per group, not one per TCR. Report each artifact path with one line "
+            f"on how to run it: a Colab notebook gets uploaded and its cells run; a bash script "
+            f"runs on the target machine. If build_group_artifact reports route_wired false, "
+            f"say plainly the route runner is not wired and hand over the script for the user "
+            f"to run. Never fabricate a model or a score, and never open a browser."),
         tools=list(_HANDOFF_EXEC_TOOLS),
         model="sonnet",
     )
@@ -118,10 +119,13 @@ def build_agents(mode="auto"):
                 "Protenix cannot model a TCR (it can).\n"
                 "Never Boltz. If no tool's validity domain covers a group, fall back to Protenix "
                 "and state plainly that an un-wired tool would fit better. Justify each choice in "
-                "one sentence that names the group field driving it, then delegate the group to "
-                "that tool's executor agent (protenix-agent, af3-agent, mhcfine-agent, "
-                "tcrdock-agent, affinetune-agent)."),
-            tools=["mcp__rep2struct__list_structure_tools", "mcp__rep2struct__list_fold_jobs", "Agent"],
+                "one sentence that names the group field driving it. Then, for each group, call "
+                "assign_group_tool(group_id, tool) to persist the choice onto its jobs BEFORE "
+                "delegating, so the executor filters on the tag by fact and the report shows the "
+                "right tool per group. Finally delegate the group to that tool's executor agent "
+                "(protenix-agent, af3-agent, mhcfine-agent, tcrdock-agent, affinetune-agent)."),
+            tools=["mcp__rep2struct__list_structure_tools", "mcp__rep2struct__list_fold_jobs",
+                   "mcp__rep2struct__assign_group_tool", "Agent"],
             model="opus",
         ),
         "qc-agent": AgentDefinition(
@@ -156,13 +160,15 @@ def build_options(run_dir, mode="auto"):
         "Agent",
         "mcp__rep2struct__ingest_repertoire", "mcp__rep2struct__annotate_specificity",
         "mcp__rep2struct__prep_and_select", "mcp__rep2struct__list_structure_tools",
-        "mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__list_compute_routes",
+        "mcp__rep2struct__list_fold_jobs", "mcp__rep2struct__assign_group_tool",
+        "mcp__rep2struct__list_compute_routes",
         "mcp__rep2struct__record_fold_result", "mcp__rep2struct__record_local_folds",
         "mcp__rep2struct__qc_structure", "mcp__rep2struct__render_final_report",
         "mcp__rep2struct__record_intake",
     ]
     if mode == "handoff":
-        allowed = base + ["mcp__rep2struct__build_fold_artifact"]
+        allowed = base + ["mcp__rep2struct__build_fold_artifact",
+                          "mcp__rep2struct__build_group_artifact"]
         servers = {"rep2struct": build_server()}
     else:
         allowed = base + ["mcp__rep2struct__build_fold_notebook", "mcp__playwright__*"]

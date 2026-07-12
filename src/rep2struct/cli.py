@@ -63,6 +63,13 @@ async def run_session(run_dir: str) -> None:
 
 def main():
     import asyncio
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print("usage: python -m rep2struct [RUN_DIR]\n\n"
+              "Runs the repertoire-to-structure session on RUN_DIR (default runs/session).\n"
+              "First run: the intake agent interviews you (data, question, compute route),\n"
+              "then builds fold artifacts and stops. Fold them, then rerun the SAME RUN_DIR\n"
+              "to resume through QC and the report.")
+        return
     run_dir = sys.argv[1] if len(sys.argv) > 1 else "runs/session"
     asyncio.run(run_session(run_dir))
 

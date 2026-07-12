@@ -21,7 +21,7 @@ def test_auto_options_keep_playwright_unchanged():
 
 def test_handoff_executor_prompt_builds_artifact_and_does_not_drive_colab():
     ex = agents._executor("protenix-agent", "protenix", mode="handoff")
-    assert "build_fold_artifact" in ex.prompt
+    assert "build_group_artifact" in ex.prompt  # one artifact per group, batched
     assert "playwright" not in ex.prompt.lower()
     assert "Ctrl+Enter" not in ex.prompt
 
