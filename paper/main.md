@@ -25,34 +25,53 @@ reproduces from committed data without a GPU.
 ## Introduction
 
 Antigen specificity is the central variable of adaptive immunity and the hardest to
-measure at scale. High-throughput single-cell platforms now read paired TCR alpha
-and beta chains from thousands of cells at once, so the repertoire (the catalogue of
-receptors) is cheap. What the repertoire does not contain is the ligand: the peptide,
-presented on a particular MHC allele, that each receptor was selected to see. Sequence
-based methods try to fill this gap by matching a query TCR to receptors of known
-specificity, but they are precise only where a close labelled neighbour exists and
-abstain on the large novel fraction that matters most.
+measure at scale. A T cell is defined by the peptide, presented on a particular major
+histocompatibility complex (MHC) allele, that its receptor was selected to recognise,
+yet that ligand is exactly what a receptor sequence does not reveal. High-throughput
+single-cell platforms now read paired TCR alpha and beta chains from thousands of cells
+at once [14], so the repertoire, the catalogue of receptors a person carries, has become
+inexpensive to obtain. Converting that catalogue into the specificities it encodes
+remains the bottleneck.
 
-Structure is the appealing alternative. If a model could fold a TCR onto a candidate
-peptide-MHC and score the result, specificity would follow from physics rather than
-from a lookup table, and novelty would stop being a barrier. AlphaFold-family models,
-including the Protenix implementation used here, emit interface confidence readouts
-(the interface predicted TM-score, ipTM, and related quantities) that are widely
-treated as proxies for whether a modelled interface is real. The open question is
-whether those readouts carry recognition information (which peptide a given TCR reads)
-or only the easier presentation information (whether a peptide binds an MHC groove at
-all), and the two are constantly conflated because a confident-looking complex satisfies
-both intuitions at once.
+Two strategies compete to close the gap. Sequence-based methods match a query receptor
+to receptors of known specificity, exploiting the observation that T cells recognising
+the same epitope share conserved complementarity-determining-region motifs [1,2,3].
+These methods are accurate where a close labelled neighbour exists, but they abstain on
+the large novel fraction of a repertoire that carries no near match, which is precisely
+the fraction that matters for discovery. Structure is the appealing alternative: if a
+model could fold a receptor onto a candidate peptide-MHC and score the result,
+specificity would follow from the modelled interface rather than from a lookup table,
+and sequence novelty would cease to be a barrier [11].
 
-We take the conflation seriously and separate the two axes by construction. We fold
-matched panels in which the MHC and the decoy peptides are held fixed and only the
-cognate assignment changes, we pre-register a held-out confirmation before running it,
-and we build a composition-scramble control that keeps a peptide's amino acid content
-while destroying its identity. The pipeline that produces these folds is itself part
-of the claim: its annotation abstains rather than guess, and its output schema forbids
-a predicted structure from upgrading a specificity call. Figure 1 shows one predicted
-complex to orient the reader, with the T cell receptor docked over the peptide held
-in the MHC groove.
+Deep-learning structure predictors have made this concrete, part of a broader trajectory
+from binding prediction toward structure-based molecular design reviewed recently [15].
+AlphaFold and its multimer and third-generation successors predict protein complexes at
+near-experimental accuracy [4,5,6], and open reproductions such as Protenix and Boltz now
+put the same capability in reach of any laboratory [7,8]. A specialised AlphaFold pipeline can already rank the
+correct peptide for a receptor above decoys with meaningful accuracy [9]. Crucially,
+these models emit interface confidence readouts, the interface predicted TM-score (ipTM)
+and related quantities, that are routinely read as evidence that a modelled interface is
+genuine.
+
+The open question is what those readouts actually measure. Antigen recognition has two
+separable axes: whether a peptide is presented, that is whether it binds the MHC groove
+at all, a problem for which dedicated predictors are mature [10], and whether a given
+receptor reads that presented peptide, which is the harder, receptor-specific question
+[11]. A confident-looking TCR-pMHC complex satisfies both intuitions at once, so an
+interface confidence score is easily mistaken for evidence of recognition when it may
+only report presentation. Separating the two requires an experiment designed for that
+purpose, not a benchmark that rewards folding a plausible complex.
+
+We take that separation seriously by construction. We fold matched panels in which the
+MHC and the decoy peptides are held fixed and only the cognate assignment changes, we
+register a single held-out prediction before folding the held-out panel to guard against
+hypothesising after the result is known [12,13], and we add a composition-scramble
+control that preserves a peptide's amino acid content while destroying its identity,
+isolating presentation from sequence artefact. The pipeline that produces these folds is
+itself part of the claim: its annotation abstains rather than guess, and its output
+schema forbids a predicted structure from upgrading a specificity call. Figure 1 shows
+one predicted complex to orient the reader, with the T cell receptor docked over the
+peptide held in the MHC groove.
 
 ## Results
 
@@ -208,6 +227,24 @@ possible rather than an accidental positive. A pipeline that abstains, that scor
 presentation against a matched null, and that refuses to let a structure upgrade a
 specificity call is the right shape for this problem, because it fails loudly where a
 naive pipeline would fail silently.
+
+## References
+
+1. Dash, P. et al. Quantifiable predictive features define epitope-specific T cell receptor repertoires. *Nature* **547**, 89–93 (2017). https://doi.org/10.1038/nature22383
+2. Glanville, J. et al. Identifying specificity groups in the T cell receptor repertoire. *Nature* **547**, 94–98 (2017). https://doi.org/10.1038/nature22976
+3. Mayer-Blackwell, K. et al. TCR meta-clonotypes for biomarker discovery with tcrdist3 enabled identification of public, HLA-restricted clusters of SARS-CoV-2 TCRs. *eLife* **10**, e68605 (2021). https://doi.org/10.7554/eLife.68605
+4. Jumper, J. et al. Highly accurate protein structure prediction with AlphaFold. *Nature* **596**, 583–589 (2021). https://doi.org/10.1038/s41586-021-03819-2
+5. Evans, R. et al. Protein complex prediction with AlphaFold-Multimer. *bioRxiv* 2021.10.04.463034 (2022). https://doi.org/10.1101/2021.10.04.463034
+6. Abramson, J. et al. Accurate structure prediction of biomolecular interactions with AlphaFold 3. *Nature* **630**, 493–500 (2024). https://doi.org/10.1038/s41586-024-07487-w
+7. ByteDance AML AI4Science Team. Protenix: advancing structure prediction through a comprehensive AlphaFold3 reproduction. *bioRxiv* 2025.01.08.631967 (2025). https://doi.org/10.1101/2025.01.08.631967
+8. Wohlwend, J. et al. Boltz-1: democratizing biomolecular interaction modeling. *bioRxiv* 2024.11.19.624167 (2024). https://doi.org/10.1101/2024.11.19.624167
+9. Bradley, P. Structure-based prediction of T cell receptor:peptide-MHC interactions. *eLife* **12**, e82813 (2023). https://doi.org/10.7554/eLife.82813
+10. Reynisson, B., Alvarez, B., Paul, S., Peters, B. & Nielsen, M. NetMHCpan-4.1 and NetMHCIIpan-4.0: improved predictions of MHC antigen presentation by concurrent motif deconvolution and integration of MS MHC eluted ligand data. *Nucleic Acids Res.* **48**, W449–W454 (2020). https://doi.org/10.1093/nar/gkaa379
+11. Rossjohn, J. et al. T cell antigen receptor recognition of antigen-presenting molecules. *Annu. Rev. Immunol.* **33**, 169–200 (2015). https://doi.org/10.1146/annurev-immunol-032414-112334
+12. Kerr, N. L. HARKing: hypothesizing after the results are known. *Pers. Soc. Psychol. Rev.* **2**, 196–217 (1998). https://doi.org/10.1207/s15327957pspr0203_4
+13. Nosek, B. A., Ebersole, C. R., DeHaven, A. C. & Mellor, D. T. The preregistration revolution. *Proc. Natl Acad. Sci. USA* **115**, 2600–2606 (2018). https://doi.org/10.1073/pnas.1708274114
+14. 10x Genomics. A new way of exploring immunity: linking highly multiplexed antigen recognition to immune repertoire and phenotype. Application note (2019).
+15. Maire, K. J. & Coquet, J. M. Highlight of 2025: from binding prediction to molecular design: computational advances in TCR-pMHC prediction and targeting. *Immunol. Cell Biol.* 1–4 (2026). https://doi.org/10.1111/imcb.70137
 
 ## Figures
 

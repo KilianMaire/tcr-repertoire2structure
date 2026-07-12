@@ -45,13 +45,24 @@ def build_main():
           "TCR-peptide recognition (held-out retrieval 0.61, 11 of 18, p 0.24).\n\n")
     body = body.replace("## Introduction", ga + "## Introduction", 1)
 
-    # rebuild the Figures section: image above each caption, as a normal paragraph
-    out = ["## Figures\n"]
-    for num, cap in re.findall(r"- \*\*Figure (\d)\.\*\* (.*?)(?=\n- \*\*Figure|\nSee |\Z)",
-                               figures, flags=re.S):
-        cap = " ".join(cap.split())
-        out.append(f"\n{_img(FIG_FILE[num])}\n\n**Figure {num}.** {cap}\n")
-    return body + "\n".join(out)
+    # captions from the Figures section, keyed by number
+    captions = {num: " ".join(cap.split()) for num, cap in
+                re.findall(r"- \*\*Figure (\d)\.\*\* (.*?)(?=\n- \*\*Figure|\nSee |\Z)",
+                           figures, flags=re.S)}
+
+    # interleave each figure right after the paragraph that first mentions it, so the
+    # figures sit in the text (Nature style) rather than in a block at the end
+    inserts = []
+    for num, cap in captions.items():
+        m = re.search(rf"Figures? {num}", body)   # single-digit; matches "Figure 3" and "Figure 3a"
+        if not m:
+            continue
+        para_end = body.find("\n\n", m.end())
+        para_end = len(body) if para_end == -1 else para_end
+        inserts.append((para_end, f"\n\n{_img(FIG_FILE[num])}\n\n**Figure {num}.** {cap}\n"))
+    for pos, snippet in sorted(inserts, reverse=True):
+        body = body[:pos] + snippet + body[pos:]
+    return body
 
 
 def build_supp():
