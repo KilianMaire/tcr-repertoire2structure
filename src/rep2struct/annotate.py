@@ -28,13 +28,27 @@ def _cache_key(c, species="human"):
 
 
 def _neighbours(clonotypes, fn, cache_path, max_workers):
-    """Return {index: neighbour-list} for every clonotype, using an on-disk cache keyed by the
-    (species, V/CDR3) tuple and a bounded thread pool. The similarity lookups are network-bound,
-    so a serial loop over thousands of clonotypes is the ingest-time wall; fan them out. Results
-    are keyed by index, so the caller reassembles in input order (determinism preserved)."""
+    """Return {index: neighbour-list} for every clonotype, keyed by index so the caller
+    reassembles in input order (determinism preserved regardless of completion order).
+
+    The durable scalability win is the ON-DISK CACHE keyed by the (species, V/CDR3) tuple: a
+    rerun does zero lookups, and the cache is flushed incrementally so a run that dies at
+    clonotype 2999/3000 stays resumable. The thread pool only helps when fn is I/O-bound (the
+    hosted tcr_explorer service) or releases the GIL; the bundled find_similar_paired_tcrs is a
+    local CPU-bound BLOSUM/pandas scan, so threads give little speedup there (set
+    R2S_ANNOTATE_WORKERS=1 to skip the overhead). The cap upstream bounds the total work."""
     import concurrent.futures
     import json
     from pathlib import Path
+
+    def _flush(cache):
+        if not cache_path:
+            return
+        try:
+            Path(cache_path).write_text(json.dumps(cache))
+        except (TypeError, ValueError, OSError):
+            pass  # a serialization slip must never crash annotate after the expensive work
+
     cache = {}
     if cache_path and Path(cache_path).exists():
         try:
@@ -52,16 +66,14 @@ def _neighbours(clonotypes, fn, cache_path, max_workers):
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             fut = {ex.submit(fn, c.cdr3a, c.trav, c.cdr3b, c.trbv, "human", 5): (i, c)
                    for i, c in todo}
-            for f in concurrent.futures.as_completed(fut):
+            for n, f in enumerate(concurrent.futures.as_completed(fut), 1):
                 i, c = fut[f]
-                neigh = f.result()[0]
+                neigh = f.result()[0]     # a raising fn propagates loudly, never caches a false empty
                 results[i] = neigh
                 cache[_cache_key(c)] = neigh
-    if cache_path and todo:
-        try:
-            Path(cache_path).write_text(json.dumps(cache))
-        except OSError:
-            pass
+                if n % 256 == 0:          # incremental flush -> partial runs stay resumable
+                    _flush(cache)
+        _flush(cache)
     return results
 
 
