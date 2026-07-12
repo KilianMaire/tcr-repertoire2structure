@@ -23,7 +23,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from rep2struct.tools.construct_io import parse_fasta
 from rep2struct.tools.protenix_inputs import _to_protenix
 from rep2struct.tools.notebook import build_notebook

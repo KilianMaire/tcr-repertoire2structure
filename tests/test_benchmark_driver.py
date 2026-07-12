@@ -1,6 +1,6 @@
 import json, sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "science" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import run_benchmark_arm as drv
 from rep2struct.schema import Clonotype, Annotation

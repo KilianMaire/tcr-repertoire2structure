@@ -7,7 +7,7 @@ _ORDER = ["A", "B", "C", "D", "E"]
 
 def _to_protenix(name: str, chains: dict) -> list:
     """One Protenix prediction record: chains A-E as protein chains, no covalent
-    bonds. Mirrors scripts/build_protenix_inputs.py, the recipe that produced the
+    bonds. Mirrors science/scripts/build_protenix_inputs.py, the recipe that produced the
     validated TABLO folds."""
     seqs = [{"proteinChain": {"sequence": chains[c], "count": 1, "id": [c]}}
             for c in _ORDER if c in chains]

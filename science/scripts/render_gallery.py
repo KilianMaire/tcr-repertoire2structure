@@ -52,12 +52,12 @@ def _best_sample(pred_dir):
 
 def _select(epitope, run):
     """Best reconstructed clonotype whose cognate is `epitope`, by TCR-peptide ipTM."""
-    manifest = json.load(open(ROOT / f"runs/{run}/manifest.json"))
+    manifest = json.load(open(ROOT.parent / f"runs/{run}/manifest.json"))
     ranked = []
     for cid, entry in manifest.items():
         if entry["cognate"] != epitope or _is_stub(entry):
             continue
-        pred = ROOT / f"runs/{run}/folds/{cid}__{epitope}/{cid}__{epitope}/seed_101/predictions"
+        pred = ROOT.parent / f"runs/{run}/folds/{cid}__{epitope}/{cid}__{epitope}/seed_101/predictions"
         got = _best_sample(pred)
         if got:
             ranked.append((cid, got[0], got[1]))

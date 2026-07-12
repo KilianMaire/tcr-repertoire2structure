@@ -19,6 +19,12 @@ Data/
 *.egg-info/
 
 # The paper package's derived data IS committed on purpose. The case-insensitive
-# `Data/` rule above otherwise swallows paper/data/ on macOS, so re-include it.
-!paper/data/
-!paper/data/**
+# `Data/` rule above otherwise swallows paper/data/ (now science/paper/data/) and
+# science/data/ on macOS, so re-include them.
+!science/paper/data/
+!science/paper/data/**
+!science/data/
+!science/data/**
+
+# session-log artifacts from the Playwright MCP browser (never commit)
+.playwright-mcp/

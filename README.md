@@ -1,4 +1,4 @@
-# Repertoire2Structure
+# Repertoire2Structure (R2S)
 
 A multi agent pipeline, orchestrated by Claude, that turns a raw 10x single cell TCR repertoire into QC'd predicted TCR pMHC structures for its top clonotypes, with honest specificity annotation and skeptical structure QC.
 
@@ -6,27 +6,41 @@ Built for the Built with Claude: Life Sciences hackathon (Researcher track).
 
 ![architecture](docs/architecture.png)
 
-## What it does
+## Repository layout
+
+The tool and the research that validated it are kept apart.
+
+```
+src/rep2struct/     the R2S tool (the deliverable): deterministic stages + the Claude Agent SDK layer
+tests/              the tool's test suite (offline, no network, no GPU)
+docs/               how the tool works (architecture, fold procedure) and the build journal (superpowers/)
+pyproject.toml      the installable package
+
+science/            the science behind it (see science/README.md)
+  paper/            the manuscript, figures, tables, derived data
+  analysis/         the validation and analysis write ups the paper draws on
+  scripts/          the figure, analysis, and study arm scripts
+  data/             committed inputs for the study arms
+```
+
+If you are here for the tool, everything you need is `src/`, `tests/`, and `docs/`. If you are here for the results, start at `science/README.md`.
+
+## What the tool does
 
 A researcher hands the pipeline a 10x contig CSV. Claude agents return a report that links each top clonotype to a candidate epitope specificity (with a confidence tier), a predicted TCR pMHC structure, and a skeptical QC verdict on whether that structure is trustworthy or a likely geometry hallucination.
 
-The chain: ingest and clonotype curation, honest specificity annotation (TCRdist against labeled references), fold prep and MSA, structure folding (Protenix on Colab, driven through the Playwright MCP), skeptical QC, and a self contained HTML report.
+The chain: ingest and clonotype curation, honest specificity annotation (TCRdist against labeled references), fold prep and MSA, structure folding (Protenix and other tools on Colab or a local GPU), skeptical QC calibrated against a per group scramble control, and a self contained HTML report.
 
 ## Two honesty rules, enforced in the annotation and QC logic
 
 1. Specificity is annotation by similarity, never prediction. A clonotype is annotated only when a TCRdist neighbor is close enough, always with the distance and a confidence tier. Clonotypes with no close neighbor are flagged unannotatable. No label is ever forced.
 2. A predicted structure does not confirm specificity. Protenix imposes canonical TCR pMHC docking geometry even on non binding sequences, so the QC step is a skeptical judge that flags a fold as suspect when its CDR3 to peptide contact does not beat the scramble control calibration.
 
-## Layers
+## Two layers
 
-A deterministic stage layer (pure Python, fully tested offline) carries reliability. On top, a genuine multi agent layer built on the Claude Agent SDK exposes the stages as in process tools and delegates from an orchestrator to specialist agents (a fold agent that drives the browser, a skeptical QC agent, a report agent).
+A deterministic stage layer (pure Python, fully tested offline) carries reliability. On top, a genuine multi agent layer built on the Claude Agent SDK exposes the stages as in process tools and delegates from an orchestrator to specialist agents (an intake agent that frames the run, a structure strategist that routes each group to one tool, per tool fold executors, a skeptical QC agent, a report agent).
 
-## Datasets
-
-- Validation arm (ground truth): a 10x 4 donor CD8 dextramer set, used to measure precision, recall, and unannotatable rate of the annotation step against the dextramer label.
-- Application arm (scale): TABLO (Zenodo 10.5281/zenodo.13119615), a large unlabeled human repertoire, run end to end.
-
-## Development
+## Install and test
 
 ```
 python3.11 -m venv .venv
@@ -34,4 +48,12 @@ python3.11 -m venv .venv
 ./.venv/bin/python -m pytest -q
 ```
 
-Design and plan live in `docs/superpowers/`. The live integration checklist (real datasets, real V domain reconstruction, real folds) is documented at the end of the plan.
+## Run
+
+```
+python -m rep2struct <run_dir> [--top-n N]
+```
+
+First run: the intake agent interviews you (data, question, compute route), then builds the fold artifacts and stops. Fold them (Colab or a local GPU), then rerun the same `<run_dir>` to resume through QC and the report. Selection depth is `--top-n` (default 8, or the `R2S_TOP_N` env var); `R2S_ANNOTATE_CAP` bounds how many clonotypes are annotated on a large repertoire.
+
+Design notes and the build journal live in `docs/superpowers/`.

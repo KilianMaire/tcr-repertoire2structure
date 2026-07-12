@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse, json, sys
 import random as _random
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rep2struct import benchmark as bm
 from rep2struct.seqs import build_tcr_seqs, build_mhc_seqs

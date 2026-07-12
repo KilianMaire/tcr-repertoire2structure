@@ -17,10 +17,10 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "paper/data"
 CHAINS = ["TCRa", "TCRb", "MHC", "b2m", "peptide"]
 
-COGNATE = ROOT / ("runs/hla_a1101/folds/01685694bec8__AVFDRKSDAK/"
-                  "01685694bec8__AVFDRKSDAK/seed_101/predictions")
-SCRAMBLE = ROOT / ("runs/hla_a1101/folds/01685694bec8____scramble__/"
-                   "01685694bec8____scramble__/seed_101/predictions")
+COGNATE = ROOT.parent / ("runs/hla_a1101/folds/01685694bec8__AVFDRKSDAK/"
+                         "01685694bec8__AVFDRKSDAK/seed_101/predictions")
+SCRAMBLE = ROOT.parent / ("runs/hla_a1101/folds/01685694bec8____scramble__/"
+                          "01685694bec8____scramble__/seed_101/predictions")
 
 
 def _samples(pred_dir):

@@ -14,7 +14,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from rep2struct.qc import ensemble_contact as _ensemble_contact
 from rep2struct.report import render_report
 from rep2struct.runstate import RunState

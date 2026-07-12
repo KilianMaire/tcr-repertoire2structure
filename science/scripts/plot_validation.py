@@ -1,6 +1,6 @@
 """Fig 2: honest annotation and the leakage guard.
 
-Reads the committed CSVs in paper/data/ and docs/validation_donor1_metrics.json.
+Reads the committed CSVs in paper/data/ and analysis/validation_donor1_metrics.json.
 Panels (2x2):
   (a) precision, recall, unannotatable rate, raw vs de-leaked.
   (b) precision and recall across the TCRdist cut, raw vs de-leaked.
@@ -31,7 +31,7 @@ def main():
     apply()
     ann = {r["set"]: r for r in _rows("validation_annotation.csv")}
     sweep = _rows("validation_threshold_sweep.csv")
-    perc = json.loads((ROOT / "docs/validation_donor1_metrics.json").read_text())["correct_distance_percentiles"]
+    perc = json.loads((ROOT / "analysis/validation_donor1_metrics.json").read_text())["correct_distance_percentiles"]
 
     fig = plt.figure(figsize=(12, 8))
     gs = fig.add_gridspec(2, 2, hspace=0.42, wspace=0.30,

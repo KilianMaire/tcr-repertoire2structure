@@ -319,7 +319,7 @@ def _tcrdock_notebook(inputs: dict) -> dict:
 
 def _protenix_notebook(inputs: dict) -> dict:
     """Protenix adapter, the default TCR-pMHC workhorse (recipe proven on the TABLO
-    folds in docs/fold_qc_results.md).
+    folds in science/analysis/fold_qc_results.md).
 
     INPUTS is {key: <protenix prediction JSON>} with the cognate and scramble records
     (keys prefixed by clonotype id, e.g. c1_cognate / c1_scramble). Each folds the full

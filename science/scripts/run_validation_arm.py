@@ -21,7 +21,7 @@ from collections import defaultdict, Counter
 from pathlib import Path
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from rep2struct.ingest import _clon_id, standardize_alleles
 from rep2struct.annotate import annotate, _default_sim, _tier, DEFAULT_TIERS
 from rep2struct.schema import Clonotype, Annotation

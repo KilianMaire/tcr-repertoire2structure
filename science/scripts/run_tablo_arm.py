@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from rep2struct.ingest import _clon_id, standardize_alleles
 from rep2struct.annotate import annotate
 from rep2struct.foldprep import select_top, build_construct
