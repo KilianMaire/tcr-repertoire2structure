@@ -19,26 +19,35 @@ GPU.
 
 ## Reproduce
 
-Derived data and figures (no GPU):
+Derived data and figures (no GPU). Every figure reads committed `data/*.csv` (or a
+committed PyMOL render) through the shared style module `scripts/figstyle.py`, and
+writes both PDF (manuscript) and PNG:
 
 ```
 python paper/make_paper_data.py                    # data/*.csv from runs/
+python scripts/extract_supp_data.py                # chain-pair + per-sample CSVs from runs/
+python scripts/plot_structure_3d.py                # Fig 1 (composes PyMOL renders)
 python scripts/plot_validation.py                  # Fig 2
 python scripts/plot_retrieval.py                   # Fig 3
 python scripts/plot_confidence_variance.py         # Fig 4 (reconstructed-only)
 python scripts/plot_mhc_scramble.py                # Fig 5 (reconstructed-only)
 python scripts/plot_synthesis.py                   # Fig 6
-python scripts/plot_structure_3d.py                # Fig 1 (composes the PyMOL renders)
+python scripts/plot_supp_retrieval_strata.py       # Fig S1
+python scripts/plot_supp_groove_conf.py            # Fig S2
+python scripts/plot_supp_chain_pair.py             # Fig S3
+python scripts/plot_supp_reproducibility.py        # Fig S4
+python scripts/plot_supp_gallery.py                # Fig S5
 ```
 
-Fig 1's cartoon renders come from PyMOL in a separate micromamba env:
+Structure renders come from PyMOL in a separate micromamba env (modes: complex,
+groove, groove_conf, interface, single):
 
 ```
-micromamba run -n pymol python scripts/render_structure_pymol.py <cif> paper/figures
+micromamba run -n pymol python scripts/render_structure_pymol.py complex <cif> paper/figures
 ```
 
-The two rendered views are committed, so `plot_structure_3d.py` rebuilds Fig 1
-without PyMOL installed.
+The renders are committed, so every structure figure rebuilds without PyMOL
+installed.
 
 Validation arm from scratch (CPU, needs the dextramer dataset under data/dataset):
 

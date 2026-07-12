@@ -1,0 +1,11 @@
+construct,sample,iptm_TCRpep_max,iptm_groove,ranking_score
+cognate,0,0.4298,0.9601,0.9203
+cognate,1,0.4248,0.9585,0.9197
+cognate,2,0.4222,0.9584,0.9192
+cognate,3,0.4208,0.9586,0.9159
+cognate,4,0.4286,0.9600,0.9069
+scramble,0,0.3970,0.7731,0.9282
+scramble,1,0.3625,0.7704,0.9268
+scramble,2,0.3559,0.7774,0.9267
+scramble,3,0.4071,0.7585,0.9212
+scramble,4,0.3701,0.7677,0.9201
