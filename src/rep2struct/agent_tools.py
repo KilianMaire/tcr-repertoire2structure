@@ -163,7 +163,18 @@ async def list_fold_jobs(args):
     for j in jobs:
         j["done"] = j["clonotype_id"] in done
     n_pending = sum(1 for j in jobs if not j["done"])
-    r = _txt(f"{len(jobs)} jobs ({n_pending} pending, {len(jobs) - n_pending} done)")
+    # The per-job routing tags go in the TEXT too, not only structuredContent: the strategist
+    # routes each group on mhc_class/has_tcr/species/output_needed, and if it only sees the
+    # summary count it cannot route and (correctly) refuses to guess. The bulky construct_fasta
+    # stays out of the text; the executor reads it back from disk by clonotype_id.
+    lines = [
+        f"- {j['clonotype_id']} (group {j.get('group_id')}): mhc_class={j.get('mhc_class')}, "
+        f"has_tcr={j.get('has_tcr')}, species={j.get('species')}, "
+        f"output_needed={j.get('output_needed')}, tool={j.get('tool')}, done={j['done']}"
+        for j in jobs
+    ]
+    head = f"{len(jobs)} jobs ({n_pending} pending, {len(jobs) - n_pending} done)"
+    r = _txt(head + (":\n" + "\n".join(lines) if lines else ""))
     r["structuredContent"] = {"jobs": jobs, "pending": n_pending}
     return r
 

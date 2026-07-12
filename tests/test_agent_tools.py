@@ -53,6 +53,10 @@ def test_prep_and_select_skips_unfoldable(tmp_path):
     assert len(jobs) == len(listed["structuredContent"]["jobs"])
     # every prepared job must have come from a foldable (annotatable + hla) entry
     assert len(jobs) >= 1
+    # the strategist routes off the TEXT: per-job routing tags must be there, not only in
+    # structuredContent (else it sees a bare count and cannot route).
+    text = listed["content"][0]["text"]
+    assert "mhc_class=" in text and "has_tcr=" in text and "output_needed=" in text
 
 
 def test_qc_tool_flags_scramble(tmp_path):
