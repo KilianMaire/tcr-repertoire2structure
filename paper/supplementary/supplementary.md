@@ -44,9 +44,10 @@ them. The retrieval signal is not sample noise. Source:
 ### Figure S5. Gallery of predicted TCR-pMHC complexes across epitopes.
 `figS5_complex_gallery.pdf`. Four predicted complexes in the same canonical TCR-up
 orientation, three A*02:01 epitopes (GILGFVFTL, ELAGIGILTV, FLYALALLL) and one
-A*11:01 epitope (IVTDFSVIK), coloured by chain. Each panel carries an inset that
-zooms on the peptide (orange sticks) in the MHC groove, shown as a recessive grey
-cartoon. The pipeline produces consistent well-folded complexes across epitopes and
+A*11:01 epitope (IVTDFSVIK), coloured by chain. In each panel a leader line runs from
+the peptide in the groove to an enlarged inset that zooms on the peptide (orange
+sticks) against a recessive grey MHC cartoon. The pipeline produces consistent
+well-folded complexes across epitopes and
 both alleles, not a single cherry-picked fold. Renders and per-epitope selection
 from `scripts/render_gallery.py`.
 
