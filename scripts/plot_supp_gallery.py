@@ -54,6 +54,16 @@ def main():
                 fontweight="bold", va="top", ha="left", color=PALETTE["ink"])
         ax.text(0.5, -0.02, caption, transform=ax.transAxes, fontsize=9,
                 ha="center", va="top", color=PALETTE["ink"])
+        # inset: zoom on the peptide in the groove, placed in the lower-right whitespace
+        inset = FIGS / fname.replace(".png", "_inset.png")
+        iax = ax.inset_axes([0.60, 0.02, 0.40, 0.30])
+        iax.imshow(_autocrop(plt.imread(inset)))
+        iax.set_aspect("equal")
+        iax.set_xticks([]); iax.set_yticks([])
+        for sp in iax.spines.values():
+            sp.set_visible(True); sp.set_edgecolor(PALETTE["mute"]); sp.set_linewidth(1.0)
+        iax.text(0.5, 1.02, "peptide", transform=iax.transAxes, fontsize=7.5,
+                 ha="center", va="bottom", color=PALETTE["mute"])
     fig.legend(handles=[Patch(color=c, label=l) for c, l in LEGEND],
                loc="lower center", ncol=5, frameon=False, fontsize=9,
                bbox_to_anchor=(0.5, 0.005))

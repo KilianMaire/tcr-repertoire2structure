@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from render_structure_pymol import render_single_uniform
+from render_structure_pymol import render_single_uniform, render_peptide_inset
 
 ROOT = Path(__file__).resolve().parent.parent
 FIGS = ROOT / "paper/figures"
@@ -74,6 +74,7 @@ def main():
             continue
         cid, cif, metric = sel
         render_single_uniform(cif, str(FIGS / out))
+        render_peptide_inset(cif, str(FIGS / out.replace(".png", "_inset.png")))
         print(f"{letter:5} {epitope:12} {cid:14} {metric:11.3f}  {out}")
 
 

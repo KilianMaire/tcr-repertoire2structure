@@ -213,6 +213,23 @@ def render_groove(cif, out_png):
     print("rendered groove", out_png)
 
 
+def render_peptide_inset(cif, out_png):
+    """Tight top-down zoom on the peptide for a gallery inset: the MHC groove is a
+    recessive translucent grey so the orange peptide sticks are the clear focus."""
+    _base_scene(cif)
+    cmd.show("cartoon", "m and chain C")
+    cmd.color("grey80", "m and chain C")
+    cmd.set("cartoon_transparency", 0.65, "m and chain C")
+    cmd.show("sticks", "m and chain E")
+    cmd.color(COLORS["E"], "m and chain E")
+    cmd.set("stick_radius", 0.4, "m and chain E")
+    cmd.orient("(m and chain C within 10 of (m and chain E)) or (m and chain E)")
+    cmd.zoom("m and chain E", 3.5)
+    cmd.ray(1150, 900)
+    cmd.png(out_png, dpi=200)
+    print("rendered peptide_inset", out_png)
+
+
 def render_groove_conf(cif, out_png, pmin=50, pmax=95):
     """Top-down groove, peptide sticks coloured by per-residue pLDDT (B-factor),
     each residue labelled one-letter + position. High pLDDT -> blue, low -> red."""
@@ -281,7 +298,8 @@ DISPATCH = {"complex": lambda a: render_complex(a[0], a[1]),
             "groove_conf": lambda a: render_groove_conf(a[0], a[1]),
             "interface": lambda a: render_interface(a[0], a[1]),
             "single": lambda a: render_single(a[0], a[1]),
-            "single_uniform": lambda a: render_single_uniform(a[0], a[1])}
+            "single_uniform": lambda a: render_single_uniform(a[0], a[1]),
+            "peptide_inset": lambda a: render_peptide_inset(a[0], a[1])}
 
 if __name__ == "__main__":
     mode = sys.argv[1]
