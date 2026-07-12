@@ -195,14 +195,14 @@ def orchestrator_prompt(csv_path, run_dir, top_n, question=None):
         f"5. Delegate to the report-agent to render the final HTML report, and return its path.")
 
 
-def intake_orchestrator_prompt(run_dir, spec):
+def intake_orchestrator_prompt(run_dir, spec, top_n=8):
     return (
         f"Run the repertoire to structure pipeline on {spec.input_path} with run_dir "
         f"{run_dir}.\nUser question steering the routing: {spec.question}\n"
         f"Compute route: {spec.compute_route} (route params {spec.route_params}).\n"
         f"1. Call ingest_repertoire, then annotate_specificity (honest annotation, keep "
         f"unannotatable as is).\n"
-        f"2. Call prep_and_select with top_n 8.\n"
+        f"2. Call prep_and_select with top_n {top_n}.\n"
         f"3. Delegate to the structure-strategist to route each group to a tool; each tool's "
         f"executor builds the fold artifact for compute_route '{spec.compute_route}' and "
         f"STOPS. Present the plan (which group to which tool, which artifact files) and let "

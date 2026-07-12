@@ -32,3 +32,11 @@ def test_intake_orchestrator_prompt_threads_the_spec():
                       {"working_path": "/scratch"})
     p = agents.intake_orchestrator_prompt("/tmp/run", spec)
     assert "/data/c.csv" in p and "which epitope?" in p and "local_gpu" in p
+    assert "top_n 8" in p  # default selection depth
+
+
+def test_intake_orchestrator_prompt_respects_top_n():
+    from rep2struct.intake import IntakeSpec
+    spec = IntakeSpec("10x", "/data/c.csv", "q?", "colab", {})
+    p = agents.intake_orchestrator_prompt("/tmp/run", spec, top_n=25)
+    assert "top_n 25" in p and "top_n 8" not in p

@@ -302,11 +302,18 @@ def _write_artifact(run_dir, stem, tool, inputs, route):
         out = nb_dir / f"{stem}.ipynb"
         out.write_text(_json.dumps(build_notebook(tool, inputs), indent=1))
     else:  # bash_script (local_gpu, and the honest ssh/server handoff)
-        spec = intake.load_intake(run_dir)
-        working = (spec.route_params.get("working_path") if spec else None) or "."
         sc_dir = Path(run_dir) / "scripts"
         sc_dir.mkdir(parents=True, exist_ok=True)
         out = sc_dir / f"{stem}.sh"
+        if tool != "protenix":
+            # Only the Protenix bash runner is wired. Never emit a Protenix script fed another
+            # tool's inputs (it would fold the wrong model on wrong-shaped JSON and claim success);
+            # write a fail-loud stub and report the route as not wired for this tool.
+            out.write_text(f"#!/usr/bin/env bash\necho 'no bash runner wired for {tool}; use the "
+                           f"colab route for {tool} folds' >&2\nexit 1\n")
+            return out, kind, False
+        spec = intake.load_intake(run_dir)
+        working = (spec.route_params.get("working_path") if spec else None) or "."
         out.write_text(build_script(inputs, working_path=working))
     return out, kind, wired
 
@@ -364,30 +371,66 @@ async def build_fold_artifact(args):
     return r
 
 
+# Cap clonotypes per artifact so one Colab session's wall-clock/memory stays sane; a bigger
+# group is sharded into {gid}_{tool}_partK artifacts a researcher runs independently.
+_MAX_BATCH = 16
+
+
 @tool("build_group_artifact",
-      "Build ONE fold artifact (Colab notebook or bash script) that folds a WHOLE group's pending "
-      "clonotypes in a single run, chosen by the compute route. Use this instead of one artifact "
-      "per clonotype so a researcher uploads/runs one notebook per group, not one per TCR.",
+      "Build fold artifacts (Colab notebook or bash script) that fold a WHOLE group's pending "
+      "clonotypes, batched into as few artifacts as possible (sharded at 16 per artifact), chosen "
+      "by the compute route. Use this instead of one artifact per clonotype so a researcher runs "
+      "one artifact per group (or a few shards for a big group), not one per TCR. The tool is "
+      "taken from the strategist's persisted choice; a mismatching passed tool fails loud.",
       {"run_dir": str, "group_id": str, "tool": str, "compute_route": str})
 async def build_group_artifact(args):
     rs = RunState(args["run_dir"])
     jobs = rs.read_stage("foldjobs") if rs.stage_done("foldjobs") else []
     done = rs.read_stage("folds") if rs.stage_done("folds") else {}
-    gid, tool, route = args["group_id"], args["tool"], args["compute_route"]
+    gid, route = args["group_id"], args["compute_route"]
     pend = [j for j in jobs if j.get("group_id") == gid and j["clonotype_id"] not in done]
     if not pend:
         return _txt(f"no pending fold jobs in group {gid}")
-    merged = {}
-    for j in pend:
-        cid = j["clonotype_id"]
-        clon, ann = _tcrdock_ctx(args["run_dir"], cid, tool)
-        merged.update(_fold_inputs(tool, j, cid, clon, ann))
-    out, kind, wired = _write_artifact(args["run_dir"], f"{gid}_{tool}", tool, merged, route)
-    note = "" if wired else f" (route '{route}' runner not wired; run it yourself)"
-    cids = [j["clonotype_id"] for j in pend]
-    r = _txt(f"{kind} for group {gid} ({len(cids)} clonotypes, {tool}) via {route} written to {out}{note}")
-    r["structuredContent"] = {"artifact_path": str(out), "artifact_kind": kind, "route_wired": wired,
-                              "clonotypes": cids, "tool": tool, "group_id": gid}
+    # The strategist's persisted choice (assign_group_tool) is the source of truth; the passed
+    # tool is only validated against it, so a prompt slip can never fold a group with a different
+    # model than the report will show.
+    persisted = {j.get("tool") for j in pend if j.get("tool")}
+    if len(persisted) > 1:
+        return _txt(f"group {gid} has mixed persisted tools {sorted(persisted)}; "
+                    f"assign_group_tool one tool per group first")
+    tool = next(iter(persisted)) if persisted else args["tool"]
+    if persisted and args.get("tool") and args["tool"] != tool:
+        return _txt(f"tool mismatch for group {gid}: strategist persisted '{tool}', executor "
+                    f"passed '{args['tool']}'; not building")
+    # Only Protenix has a bash runner. For a bash route + another tool, short-circuit to one
+    # fail-loud stub before building any per-clonotype inputs (which we could not run anyway).
+    if compute_routes.artifact_kind_for(route) == "bash_script" and tool != "protenix":
+        out, kind, _ = _write_artifact(args["run_dir"], f"{gid}_{tool}", tool, {}, route)
+        r = _txt(f"no bash runner wired for {tool} in group {gid}; wrote fail-loud stub {out}")
+        r["structuredContent"] = {
+            "artifacts": [{"artifact_path": str(out),
+                           "clonotypes": [j["clonotype_id"] for j in pend]}],
+            "artifact_kind": kind, "route_wired": False, "tool": tool, "group_id": gid,
+            "n_clonotypes": len(pend), "n_artifacts": 1}
+        return r
+    shards = [pend[i:i + _MAX_BATCH] for i in range(0, len(pend), _MAX_BATCH)]
+    artifacts, kind, wired = [], None, True
+    for k, chunk in enumerate(shards):
+        merged = {}
+        for j in chunk:
+            cid = j["clonotype_id"]
+            clon, ann = _tcrdock_ctx(args["run_dir"], cid, tool)
+            merged.update(_fold_inputs(tool, j, cid, clon, ann))
+        stem = f"{gid}_{tool}" if len(shards) == 1 else f"{gid}_{tool}_part{k + 1}"
+        out, kind, wired = _write_artifact(args["run_dir"], stem, tool, merged, route)
+        artifacts.append({"artifact_path": str(out),
+                          "clonotypes": [j["clonotype_id"] for j in chunk]})
+    note = "" if wired else f" (route '{route}' runner not wired for {tool}; run it yourself)"
+    r = _txt(f"{kind} for group {gid}: {len(pend)} clonotypes in {len(shards)} artifact(s) "
+             f"({tool}) via {route}{note}")
+    r["structuredContent"] = {"artifacts": artifacts, "artifact_kind": kind, "route_wired": wired,
+                              "tool": tool, "group_id": gid, "n_clonotypes": len(pend),
+                              "n_artifacts": len(shards)}
     return r
 
 
