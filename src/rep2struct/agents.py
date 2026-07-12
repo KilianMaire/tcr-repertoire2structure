@@ -104,14 +104,23 @@ def build_agents(mode="auto"):
                 "You choose structure tools. Call list_structure_tools to read each tool's "
                 "validity domain, and list_fold_jobs to see the jobs (each carries group_id, "
                 "mhc_class, has_tcr, species, output_needed). For each homogeneous group pick "
-                "ONE tool: Protenix is the default workhorse; switch to a specialized tool "
-                "only when the group justifies it (af3 if the user has weights and it helps, "
-                "affinetune for is-it-presented in class I or II, mhcfine for a precise class I "
-                "pose, tcrdock for the TCR interface). Never Boltz. If no tool's validity "
-                "domain covers a group, fall back to Protenix and state plainly that an "
-                "un-wired tool would fit better. Justify each choice in one sentence, then "
-                "delegate the group to that tool's executor agent (protenix-agent, af3-agent, "
-                "mhcfine-agent, tcrdock-agent, affinetune-agent)."),
+                "ONE tool. Protenix is the default and it folds the FULL TCR-pMHC (all chains "
+                "A-E), so has_tcr=True does NOT on its own justify a switch: Protenix already "
+                "handles TCR groups. Start from Protenix and keep it unless the group gives a "
+                "positive, specific reason to switch, which you must name:\n"
+                "- af3 only if the user has the gated weights and they help;\n"
+                "- affinetune when the question is literally is-this-peptide-presented "
+                "(output_needed=binding_score), class I or II;\n"
+                "- mhcfine only for a precise class I pose with NO TCR (needs_tcr=False);\n"
+                "- tcrdock only when the interface PAE is the actual point AND you can say why "
+                "Protenix's full fold plus CDR3-peptide QC is insufficient for this group; never "
+                "pick tcrdock merely because a TCR is present, and never justify it by claiming "
+                "Protenix cannot model a TCR (it can).\n"
+                "Never Boltz. If no tool's validity domain covers a group, fall back to Protenix "
+                "and state plainly that an un-wired tool would fit better. Justify each choice in "
+                "one sentence that names the group field driving it, then delegate the group to "
+                "that tool's executor agent (protenix-agent, af3-agent, mhcfine-agent, "
+                "tcrdock-agent, affinetune-agent)."),
             tools=["mcp__rep2struct__list_structure_tools", "mcp__rep2struct__list_fold_jobs", "Agent"],
             model="opus",
         ),
