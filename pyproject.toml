@@ -17,6 +17,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# For scripts/capture_demo.py (submission video capture); not needed to run R2S.
+capture = ["playwright>=1.40"]
 
 [project.scripts]
 r2s = "rep2struct.webapp:main"

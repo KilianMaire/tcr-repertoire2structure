@@ -159,7 +159,8 @@
     who.textContent = r.kind==="user" ? "you" : (r.agent||"agent");
     const card=document.createElement("div");
     if (r.kind==="tool_use") { card.className="card tool";
-      card.innerHTML="<span class=name>"+esc(r.tool||"tool")+"</span>"+(r.text?"  "+esc(r.text):""); }
+      const tname=(r.tool||"tool").replace(/^mcp__[a-z0-9]+__/i,"");  // drop the MCP namespace
+      card.innerHTML="<span class=name>"+esc(tname)+"</span>"+(r.text?"  "+esc(r.text):""); }
     else if (r.kind==="tool_result") { card.className="card result"; card.textContent="= "+r.text; }
     else if (r.kind==="subagent_start"||r.kind==="subagent_stop") { card.className="card tool";
       card.textContent=(r.kind==="subagent_start"?"▸ ":"◂ ")+r.text; }
