@@ -68,6 +68,22 @@ def test_start_and_answer_bridge_drives_the_runner(tmp_path):
     assert "contigs.csv" in rows
 
 
+def test_awaiting_flips_true_while_blocked_then_false(tmp_path):
+    state = webapp.AppState(str(tmp_path), runner=_fake_runner)
+    state.start(b"barcode,cdr3\n", "contigs.csv")
+    # the fake runner reaches `await answer_source()` and blocks: awaiting is True
+    deadline = time.time() + 5
+    while not state.is_awaiting() and time.time() < deadline:
+        time.sleep(0.02)
+    assert state.is_awaiting() is True
+    # ending the run clears awaiting
+    state.answer("")
+    deadline = time.time() + 5
+    while state.is_running() and time.time() < deadline:
+        time.sleep(0.02)
+    assert state.is_awaiting() is False
+
+
 def test_server_serves_landing_page(tmp_path):
     import threading, urllib.request
     httpd = webapp.build_app_server(str(tmp_path), port=0, runner=_fake_runner)

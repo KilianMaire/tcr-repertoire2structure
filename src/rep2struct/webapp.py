@@ -63,6 +63,7 @@ class _Session:
         self.loop = loop
         self.queue = queue
         self.thread = thread
+        self.awaiting = False  # True while the run is blocked waiting for a user answer
 
 
 class AppState:
@@ -81,7 +82,15 @@ class AppState:
         queue: asyncio.Queue = asyncio.Queue()
 
         async def source():
-            return await queue.get()
+            # Mark the run as waiting for the user while blocked on the queue, so
+            # the UI can tell "agent working" from "your turn" honestly.
+            if self._session:
+                self._session.awaiting = True
+            try:
+                return await queue.get()
+            finally:
+                if self._session:
+                    self._session.awaiting = False
 
         def worker():
             asyncio.set_event_loop(loop)
@@ -107,6 +116,10 @@ class AppState:
 
     def is_running(self) -> bool:
         return bool(self._session and self._session.thread.is_alive())
+
+    def is_awaiting(self) -> bool:
+        """True when the active run is blocked waiting for the user's next answer."""
+        return bool(self.is_running() and self._session.awaiting)
 
     def current_run_name(self) -> str | None:
         return Path(self._session.run_dir).name if self._session else None
@@ -148,6 +161,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(read_transcript(run_dir) if run_dir else [])
         elif parsed.path == "/status":
             self._json({"running": self._state.is_running(),
+                        "awaiting": self._state.is_awaiting(),
                         "current": self._state.current_run_name()})
         else:
             self._send(app_html().encode(), "text/html; charset=utf-8")
