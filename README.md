@@ -60,13 +60,17 @@ First run: the intake agent interviews you (data, question, compute route), then
 
 ## Web app (chat front end)
 
-For a run driven entirely from the browser, serve the chat landing page:
+For a run driven entirely from the browser, installing R2S gives you the `r2s`
+command:
 
 ```
-python -m rep2struct.webapp        # runs stored under runs/
+r2s                 # starts the web app and opens it in your browser
 ```
 
-Open the printed local address, drop a 10x contig CSV to start a run, and answer
+(`python -m rep2struct.webapp` does the same without opening a browser; add
+`--no-browser` or `--port N` to `r2s` as needed. Runs are stored under `runs/`.)
+
+Drop a 10x contig CSV to start a run, and answer
 the intake agent in the chat. The multi agent orchestration streams into a live
 timeline colored by agent, and past runs stay in the sidebar (each backed by its
 own `run_dir` on disk). One run is active at a time. The server is standard
