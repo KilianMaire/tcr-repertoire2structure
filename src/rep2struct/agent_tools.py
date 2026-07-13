@@ -31,6 +31,19 @@ def _txt(s):
     return {"content": [{"type": "text", "text": s}]}
 
 
+def _stub_warning(pairs):
+    """Warn about clonotypes whose V-domain is a poly-G stub because germline reconstruction
+    failed. Surfaced BEFORE folding (prep, listing, and artifact build) so the user is told the
+    TCR is not real and the fold cannot be trusted for it, instead of only learning it from QC
+    after the fold. pairs is a list of (clonotype_id, tcr_reconstructed) with reconstructed=False
+    meaning a stub. Returns "" when nothing is a stub."""
+    stubs = [cid for cid, reconstructed in pairs if not reconstructed]
+    if not stubs:
+        return ""
+    return (f" ⚠ {len(stubs)} of {len(pairs)} on a poly-G STUB V-domain (germline reconstruction "
+            f"failed; the TCR is not real and QC will mark it suspect): {', '.join(stubs)}")
+
+
 def _scramble_null(cognate_score_path):
     """The group's OWN scramble score, read from the sibling file the fold writes next to the
     cognate one ({cid}_cognate.score and {cid}_scramble.score). That score IS the per-group
@@ -181,8 +194,11 @@ async def prep_and_select(args):
     for j in jobs:   # MSA is a pre-fold artifact; no runners here = MSA-free default
         j.msa_ref, j.msa_basis = build_msa(j, args["run_dir"])
     RunState(args["run_dir"]).write_stage("foldjobs", jobs)
-    r = _txt(f"prepared {len(jobs)} fold jobs")
-    r["structuredContent"] = {"jobs": [j.clonotype_id for j in jobs]}
+    warn = _stub_warning([(j.clonotype_id, j.tcr_reconstructed) for j in jobs])
+    r = _txt(f"prepared {len(jobs)} fold jobs" + warn)
+    r["structuredContent"] = {"jobs": [j.clonotype_id for j in jobs],
+                              "stub_v_clonotypes": [j.clonotype_id for j in jobs
+                                                    if not j.tcr_reconstructed]}
     return r
 
 
@@ -205,10 +221,12 @@ async def list_fold_jobs(args):
     lines = [
         f"- {j['clonotype_id']} (group {j.get('group_id')}): mhc_class={j.get('mhc_class')}, "
         f"has_tcr={j.get('has_tcr')}, species={j.get('species')}, "
-        f"output_needed={j.get('output_needed')}, tool={j.get('tool')}, done={j['done']}"
+        f"output_needed={j.get('output_needed')}, tool={j.get('tool')}, done={j['done']}, "
+        f"stub_V={not j.get('tcr_reconstructed', True)}"
         for j in jobs
     ]
-    head = f"{len(jobs)} jobs ({n_pending} pending, {len(jobs) - n_pending} done)"
+    warn = _stub_warning([(j['clonotype_id'], j.get('tcr_reconstructed', True)) for j in jobs])
+    head = f"{len(jobs)} jobs ({n_pending} pending, {len(jobs) - n_pending} done)" + warn
     r = _txt(head + (":\n" + "\n".join(lines) if lines else ""))
     r["structuredContent"] = {"jobs": jobs, "pending": n_pending}
     return r
@@ -377,7 +395,8 @@ async def build_fold_notebook(args):
     nb_dir.mkdir(parents=True, exist_ok=True)
     out = nb_dir / f"{cid}_{tool}.ipynb"
     out.write_text(_json.dumps(nb, indent=1))
-    r = _txt(f"notebook for {cid} ({tool}) written to {out}")
+    warn = _stub_warning([(cid, job.get("tcr_reconstructed", True))])
+    r = _txt(f"notebook for {cid} ({tool}) written to {out}{warn}")
     r["structuredContent"] = {"notebook_path": str(out), "clonotype_id": cid, "tool": tool}
     return r
 
@@ -398,7 +417,8 @@ async def build_fold_artifact(args):
     inputs = _fold_inputs(tool, job, cid, clon, ann)
     out, kind, wired = _write_artifact(args["run_dir"], f"{cid}_{tool}", tool, inputs, route)
     note = "" if wired else f" (route '{route}' runner not wired; run the script yourself)"
-    r = _txt(f"{kind} for {cid} ({tool}) via {route} written to {out}{note}")
+    warn = _stub_warning([(cid, job.get("tcr_reconstructed", True))])
+    r = _txt(f"{kind} for {cid} ({tool}) via {route} written to {out}{note}{warn}")
     r["structuredContent"] = {"artifact_path": str(out), "artifact_kind": kind,
                               "route_wired": wired, "clonotype_id": cid, "tool": tool}
     return r
@@ -459,8 +479,9 @@ async def build_group_artifact(args):
         artifacts.append({"artifact_path": str(out),
                           "clonotypes": [j["clonotype_id"] for j in chunk]})
     note = "" if wired else f" (route '{route}' runner not wired for {tool}; run it yourself)"
+    warn = _stub_warning([(j["clonotype_id"], j.get("tcr_reconstructed", True)) for j in pend])
     r = _txt(f"{kind} for group {gid}: {len(pend)} clonotypes in {len(shards)} artifact(s) "
-             f"({tool}) via {route}{note}")
+             f"({tool}) via {route}{note}{warn}")
     r["structuredContent"] = {"artifacts": artifacts, "artifact_kind": kind, "route_wired": wired,
                               "tool": tool, "group_id": gid, "n_clonotypes": len(pend),
                               "n_artifacts": len(shards)}
