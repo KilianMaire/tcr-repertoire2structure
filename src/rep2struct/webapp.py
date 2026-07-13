@@ -173,10 +173,15 @@ def build_app_server(base_dir: str, port: int = 8000, runner=None) -> ThreadingH
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 
-def serve(base_dir: str = "runs", port: int = 8000) -> None:
+def serve(base_dir: str = "runs", port: int = 8000, open_browser: bool = False) -> None:
+    import webbrowser
+
     httpd = build_app_server(base_dir, port)
     url = f"http://127.0.0.1:{httpd.server_address[1]}"
     print(f"R2S web app on {url}  (runs under {base_dir}/)")
+    if open_browser:
+        # Fire once the server is accepting; a short timer beats racing serve_forever.
+        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -185,21 +190,35 @@ def serve(base_dir: str = "runs", port: int = 8000) -> None:
         httpd.server_close()
 
 
-def main():
-    import sys
-    args = sys.argv[1:]
-    if args and args[0] in ("-h", "--help"):
-        print("usage: python -m rep2struct.webapp [BASE_DIR] [--port N]\n\n"
-              "Serves the R2S chat landing page. Drop a 10x CSV to start a run,\n"
-              "answer the intake agent in the chat, watch the orchestration stream.\n"
-              "Runs are stored under BASE_DIR (default runs/).")
-        return
+def parse_args(args):
+    """Return (base_dir, port, open_browser) from the argv tail. Pure and tested."""
+    args = list(args)
+    open_browser = True
+    if "--no-browser" in args:
+        open_browser = False
+        args.remove("--no-browser")
     port = 8000
     if "--port" in args:
         i = args.index("--port")
         port = int(args[i + 1])
         del args[i:i + 2]
-    serve(args[0] if args else "runs", port=port)
+    base_dir = args[0] if args else "runs"
+    return base_dir, port, open_browser
+
+
+def main():
+    import sys
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        print("usage: r2s [BASE_DIR] [--port N] [--no-browser]\n\n"
+              "Starts the R2S web app and opens it in your browser. Drop a 10x CSV\n"
+              "to start a run, answer the intake agent in the chat, watch the\n"
+              "orchestration stream. Runs are stored under BASE_DIR (default runs/).\n"
+              "  --port N       port to bind (default 8000)\n"
+              "  --no-browser   do not open a browser (print the URL only)")
+        return
+    base_dir, port, open_browser = parse_args(args)
+    serve(base_dir, port=port, open_browser=open_browser)
 
 
 if __name__ == "__main__":

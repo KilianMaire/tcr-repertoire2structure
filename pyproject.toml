@@ -18,6 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 
+[project.scripts]
+r2s = "rep2struct.webapp:main"
+r2s-run = "rep2struct.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
