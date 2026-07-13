@@ -20,8 +20,9 @@ import threading
 from pathlib import Path
 
 # Strip a stray "tour N" footer the orchestrator once echoed from an unrelated context file; it
-# is not part of R2S output and should not appear on screen.
-_FOOTER = re.compile(r"\s*↳\s*tour\s*\d+\s*$")
+# is not part of R2S output and should not appear on screen. It can surface anywhere inside a
+# tool-result blob (not only at the end), so match it globally rather than anchored to the tail.
+_FOOTER = re.compile(r"\s*↳\s*tour\s*\d+")
 
 from playwright.async_api import async_playwright
 
