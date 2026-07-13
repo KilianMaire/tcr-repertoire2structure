@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2S live orchestration</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --edge: #30363d; --fg: #e6edf3;
+    --muted: #8b949e; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; padding: 14px 22px;
+    background: var(--panel); border-bottom: 1px solid var(--edge);
+    display: flex; align-items: baseline; gap: 16px; }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .3px; }
+  header .rundir { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  header .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+  header .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950;
+    display: inline-block; margin-right: 6px; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  main { max-width: 900px; margin: 0 auto; padding: 22px 22px 120px; }
+  .row { display: grid; grid-template-columns: 150px 1fr; gap: 14px;
+    padding: 8px 0; animation: fade .35s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
+  .who { font-family: var(--mono); font-size: 12px; text-align: right;
+    padding-top: 3px; color: var(--muted); white-space: nowrap; }
+  .who b { display: block; font-size: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--edge);
+    border-left: 3px solid var(--lane, var(--edge)); border-radius: 8px;
+    padding: 9px 13px; }
+  .card.text { white-space: pre-wrap; }
+  .card.tool { font-family: var(--mono); font-size: 13px; }
+  .card.tool .name { color: #d2a8ff; font-weight: 600; }
+  .card.result { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .divider { grid-column: 1 / -1; text-align: center; color: var(--muted);
+    font-family: var(--mono); font-size: 12px; margin: 12px 0 4px;
+    border-top: 1px dashed var(--edge); padding-top: 12px; }
+  .waiting { color: var(--muted); text-align: center; padding: 60px 0;
+    font-family: var(--mono); }
+  /* lanes */
+  .lane-you { --lane: #58a6ff; }
+  .lane-orchestrator { --lane: #f0883e; }
+  .lane-intake { --lane: #3fb950; }
+  .lane-structure-strategist { --lane: #d2a8ff; }
+  .lane-executor { --lane: #e3b341; }
+  .lane-qc { --lane: #f85149; }
+  .lane-report { --lane: #56d4dd; }
+  .lane-run { --lane: #6e7681; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <h1>R2S live orchestration</h1>
+  <span class="rundir" id="rundir"></span>
+  <span class="count" id="count">waiting for run</span>
+</header>
+<main id="feed">
+  <div class="waiting" id="waiting">Waiting for the run to write its first message…</div>
+</main>
+<script>
+  const feed = document.getElementById("feed");
+  const countEl = document.getElementById("count");
+  const waiting = document.getElementById("waiting");
+  let lastSeq = -1;
+
+  // Which lane (color + label) an event belongs to.
+  const LANES = ["you", "orchestrator", "intake", "structure-strategist",
+                 "executor", "qc", "report", "run"];
+  function laneFor(row) {
+    if (row.kind === "user") return "you";
+    if (row.kind === "run_start" || row.kind === "run_end") return "run";
+    const a = (row.agent || "").toLowerCase();
+    for (const l of LANES) { if (a.includes(l)) return l; }
+    return "orchestrator";
+  }
+  function label(row) {
+    if (row.kind === "user") return "you";
+    return row.agent || "agent";
+  }
+
+  function render(row) {
+    if (row.kind === "run_start" || row.kind === "run_end") {
+      const d = document.createElement("div");
+      d.className = "divider";
+      d.textContent = (row.kind === "run_start" ? "▶ " : "■ ") + row.text;
+      feed.appendChild(d);
+      return;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "row lane-" + laneFor(row);
+    const who = document.createElement("div");
+    who.className = "who";
+    who.innerHTML = "<b>" + label(row) + "</b>";
+    const card = document.createElement("div");
+    if (row.kind === "tool_use") {
+      card.className = "card tool";
+      card.innerHTML = "<span class=name>" + escape(row.tool || "tool") + "</span>"
+        + (row.text ? "  " + escape(row.text) : "");
+    } else if (row.kind === "tool_result") {
+      card.className = "card result";
+      card.textContent = "= " + row.text;
+    } else if (row.kind === "subagent_start" || row.kind === "subagent_stop") {
+      card.className = "card tool";
+      card.textContent = (row.kind === "subagent_start" ? "▸ start " : "◂ stop ") + row.text;
+    } else {
+      card.className = "card text";
+      card.textContent = row.text;
+    }
+    wrap.appendChild(who);
+    wrap.appendChild(card);
+    feed.appendChild(wrap);
+  }
+  function escape(s) {
+    const d = document.createElement("div"); d.textContent = s; return d.innerHTML;
+  }
+
+  async function poll() {
+    try {
+      const rows = await (await fetch("/transcript.jsonl", { cache: "no-store" })).json();
+      if (rows.length && waiting.parentNode) waiting.remove();
+      for (const row of rows) {
+        if (row.seq > lastSeq) { render(row); lastSeq = row.seq; }
+      }
+      countEl.textContent = rows.length + " events";
+      window.scrollTo(0, document.body.scrollHeight);
+    } catch (e) { /* transcript not ready yet */ }
+  }
+  setInterval(poll, 400);
+  poll();
+</script>
+</body>
+</html>

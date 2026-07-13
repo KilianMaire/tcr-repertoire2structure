@@ -22,7 +22,7 @@ dev = ["pytest>=8.0"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-rep2struct = ["data/*.json", "templates/*.j2"]
+rep2struct = ["data/*.json", "templates/*.j2", "viewer/*.html"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

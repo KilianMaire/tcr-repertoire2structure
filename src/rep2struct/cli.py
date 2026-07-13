@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import sys
 
-from claude_agent_sdk import ClaudeSDKClient, AssistantMessage, TextBlock, ResultMessage
+from claude_agent_sdk import (
+    ClaudeSDKClient, AssistantMessage, TextBlock, ToolUseBlock, ToolResultBlock,
+    ResultMessage,
+)
 
 from . import intake
 from .agents import build_options, intake_orchestrator_prompt, orchestrator_prompt
+from .transcript import Transcript
 
 
 def plan_from_run_dir(run_dir: str) -> str:
@@ -13,15 +17,50 @@ def plan_from_run_dir(run_dir: str) -> str:
     return intake.next_phase(run_dir)
 
 
-async def _drain(client):
-    """Stream one agent turn to the terminal and return the concatenated assistant text."""
+def _tool_summary(block) -> str:
+    """One line summary of a tool call's arguments for the timeline."""
+    inp = getattr(block, "input", None) or {}
+    return ", ".join(f"{k}={str(v)[:80]}" for k, v in inp.items())
+
+
+def _result_summary(block) -> str:
+    content = getattr(block, "content", "")
+    if isinstance(content, list):
+        content = " ".join(str(getattr(c, "text", c)) for c in content)
+    return str(content)
+
+
+def record_blocks(blocks, transcript, agent, is_assistant):
+    """Dispatch one message's content blocks: print+return assistant text for the
+    terminal, and record every block (text, tool use, tool result) to the
+    transcript when one is provided. Returns the list of assistant text chunks."""
+    text = []
+    for block in blocks:
+        if isinstance(block, TextBlock):
+            if is_assistant:
+                print(block.text, end="", flush=True)
+                text.append(block.text)
+            if transcript:
+                transcript.record("agent_text", agent=agent, text=block.text)
+        elif isinstance(block, ToolUseBlock):
+            if transcript:
+                transcript.record("tool_use", agent=agent, tool=block.name,
+                                  text=_tool_summary(block))
+        elif isinstance(block, ToolResultBlock):
+            if transcript:
+                transcript.record("tool_result", agent=agent,
+                                  text=_result_summary(block))
+    return text
+
+
+async def _drain(client, transcript=None, agent="orchestrator"):
+    """Stream one agent turn to the terminal and return the concatenated assistant
+    text. When a transcript is given, every block is also recorded to it."""
     text = []
     async for msg in client.receive_response():
-        if isinstance(msg, AssistantMessage):
-            for block in msg.content:
-                if isinstance(block, TextBlock):
-                    print(block.text, end="", flush=True)
-                    text.append(block.text)
+        blocks = getattr(msg, "content", None) or []
+        text.extend(record_blocks(blocks, transcript, agent,
+                                  isinstance(msg, AssistantMessage)))
         if isinstance(msg, ResultMessage):
             break
     print(flush=True)
@@ -33,27 +72,33 @@ async def run_session(run_dir: str, top_n: int = 8) -> None:
     turn (stdin), then the orchestrator runs in handoff mode and stops at the artifacts. A
     rerun on the same run_dir enters the run phase and resumes through the checkpoint. top_n is
     the selection depth (how many top-ranked clonotypes to fold)."""
+    transcript = Transcript(run_dir)
     if plan_from_run_dir(run_dir) == "intake":
+        transcript.record("run_start", text=f"intake phase, run_dir {run_dir}")
         opts = build_options(run_dir, mode="handoff")
         async with ClaudeSDKClient(options=opts) as client:
-            await client.query(
+            kickoff = (
                 f"Run the intake interview for run_dir {run_dir} using the intake-agent, then "
                 f"call record_intake. After the brief is recorded, proceed to the handoff "
                 f"orchestration: ingest_repertoire, annotate_specificity, prep_and_select with "
                 f"top_n {top_n}, then the structure-strategist and each tool's executor to build "
                 f"the fold artifacts, and stop.")
+            await client.query(kickoff)
             # Interactive loop: the agent asks, the user answers on stdin, until the run ends.
             while True:
-                await _drain(client)
+                await _drain(client, transcript)
                 try:
                     answer = input("> ")
                 except EOFError:
                     break
                 if not answer.strip():
                     break
+                transcript.record("user", text=answer)
                 await client.query(answer)
+        transcript.record("run_end", text="intake phase complete")
         return
     # run phase: resume from the persisted intake + checkpoint
+    transcript.record("run_start", text=f"run phase, run_dir {run_dir}")
     spec = intake.load_intake(run_dir)
     opts = build_options(run_dir, mode="handoff")
     prompt = (intake_orchestrator_prompt(run_dir, spec, top_n=top_n) if spec
@@ -62,7 +107,8 @@ async def run_session(run_dir: str, top_n: int = 8) -> None:
         await client.query(
             prompt + "\nIf fold artifacts have already been run, call record_local_folds "
                      "first, then proceed to QC and the report.")
-        await _drain(client)
+        await _drain(client, transcript)
+    transcript.record("run_end", text="run phase complete")
 
 
 def main():

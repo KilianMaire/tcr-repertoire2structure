@@ -58,4 +58,18 @@ python -m rep2struct <run_dir> [--top-n N]
 
 First run: the intake agent interviews you (data, question, compute route), then builds the fold artifacts and stops. Fold them (Colab or a local GPU), then rerun the same `<run_dir>` to resume through QC and the report. Selection depth is `--top-n` (default 8, or the `R2S_TOP_N` env var); `R2S_ANNOTATE_CAP` bounds how many clonotypes are annotated on a large repertoire.
 
+## Live viewer
+
+Every run writes `<run_dir>/transcript.jsonl`, a best effort record of the real
+message stream (your turns, agent text, tool calls and results, sub agent
+handoffs). To watch a run as it happens, serve the timeline in a second terminal:
+
+```
+python -m rep2struct.viewer <run_dir>
+```
+
+Open the printed local address in a browser. The page tails the transcript and
+appends each event live, colored by which agent produced it. It renders only what
+the agents actually emitted; nothing is staged.
+
 Design notes and the build journal live in `docs/superpowers/`.
