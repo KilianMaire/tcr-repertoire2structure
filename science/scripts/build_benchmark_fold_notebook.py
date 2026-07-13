@@ -68,7 +68,7 @@ _HARDENED_FOLD = _code(
     "    # --use_msa true is REQUIRED so Protenix consumes the provided unpairedMsaPath\n",
     "    # and does NOT fall back to an online MSA server search. Omitting it makes the\n",
     "    # fold hang in a server-poll loop (loads weights to GPU, then nanosleep with the\n",
-    "    # GPU idle). This matches the hdm-tcr-derp production recipe, which asserts the\n",
+    "    # GPU idle). This matches the validated Protenix GPU-assertion recipe, which asserts the\n",
     "    # log line 'do not need to update msa result' to confirm the server is untouched.\n",
     "    cmd = (f'protenix pred -i inputs/{key}.json -o out/{key} -s 101 '\n",
     "           '-n protenix_base_default_v1.0.0 --use_msa true --use_default_params true')\n",

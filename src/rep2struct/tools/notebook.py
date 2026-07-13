@@ -323,7 +323,7 @@ def _protenix_notebook(inputs: dict) -> dict:
 
     INPUTS is {key: <protenix prediction JSON>} with the cognate and scramble records
     (keys prefixed by clonotype id, e.g. c1_cognate / c1_scramble). Each folds the full
-    A-E construct; the QC reads the produced CIFs, ensembles the CDR3-peptide contact
+    A-E construct; the QC reads the produced CIFs, ensembles the beta V-domain to peptide contact
     over the samples, and calibrates the cognate against its own scramble.
 
     A pre-fold MSA cell (ColabFold MMseqs2, CPU) computes one deep unpaired a3m per

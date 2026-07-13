@@ -114,7 +114,7 @@ def build_agents(mode="auto"):
                 "(output_needed=binding_score), class I or II;\n"
                 "- mhcfine only for a precise class I pose with NO TCR (needs_tcr=False);\n"
                 "- tcrdock only when the interface PAE is the actual point AND you can say why "
-                "Protenix's full fold plus CDR3-peptide QC is insufficient for this group; never "
+                "Protenix's full fold plus beta V-domain to peptide QC is insufficient for this group; never "
                 "pick tcrdock merely because a TCR is present, and never justify it by claiming "
                 "Protenix cannot model a TCR (it can).\n"
                 "Never Boltz. If no tool's validity domain covers a group, fall back to Protenix "
@@ -137,7 +137,7 @@ def build_agents(mode="auto"):
                 "binding_score tools you judge predicted presentation, not geometry. For a "
                 "peptide_groove (pose) tool like mhcfine the verdict is pose-only: it seats "
                 "any peptide in the groove, so a pose is placement, never proof of "
-                "recognition. Report reliable only when the CDR3 to peptide contact beats the "
+                "recognition. Report reliable only when the beta V-domain to peptide contact beats the "
                 "group's scramble calibration; otherwise suspect. Never upgrade a verdict to "
                 "please the caller."),
             tools=["mcp__rep2struct__qc_structure"],

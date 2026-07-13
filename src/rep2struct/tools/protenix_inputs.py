@@ -21,7 +21,7 @@ def build(construct_fasta: str) -> dict:
     cognate and a scramble control that shuffles only the peptide (chain E),
     everything else identical. The scramble is the per-clonotype null the cdr3-peptide
     QC calibrates against (Honesty Rule 2: a fold does not confirm specificity; a
-    cognate must beat its own scramble on CDR3-peptide contact).
+    cognate must beat its own scramble on beta V-domain to peptide contact).
     """
     chains = parse_fasta(construct_fasta)
     missing = set("ABCDE") - set(chains)

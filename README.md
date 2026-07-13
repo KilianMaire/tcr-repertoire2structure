@@ -8,7 +8,7 @@ Built for the Built with Claude: Life Sciences hackathon (Researcher track).
 
 [![Watch the R2S demo on YouTube](docs/demo/poster.png)](https://www.youtube.com/watch?v=Ru48ZQThA60)
 
-Watch on [YouTube](https://www.youtube.com/watch?v=Ru48ZQThA60), or [download the mp4](docs/demo/R2S_submission.mp4). A narrated walk through: what the pipeline recognizes (the TCR to peptide MHC complex), the multi agent run on a real 10x repertoire, honest specificity annotation (23 high confidence, 90 unannotatable, no forced label), the structure strategist routing a class one group to Protenix, stub flagging before a fold is spent, and the skeptical scramble calibrated QC.
+Watch on [YouTube](https://www.youtube.com/watch?v=Ru48ZQThA60), or [download the mp4](docs/demo/R2S_submission.mp4). A narrated walk through: what the pipeline recognizes (the TCR to peptide MHC complex), the multi agent run on a real 10x repertoire, honest specificity annotation (29 annotated across confidence tiers, 23 of them high confidence, 90 unannotatable, no forced label), the structure strategist routing a class one group to Protenix, stub flagging before a fold is spent, and the skeptical scramble calibrated QC.
 
 ![architecture](docs/architecture.png)
 
@@ -40,7 +40,7 @@ The chain: ingest and clonotype curation, honest specificity annotation (TCRdist
 ## Two honesty rules, enforced in the annotation and QC logic
 
 1. Specificity is annotation by similarity, never prediction. A clonotype is annotated only when a TCRdist neighbor is close enough, always with the distance and a confidence tier. Clonotypes with no close neighbor are flagged unannotatable. No label is ever forced.
-2. A predicted structure does not confirm specificity. Protenix imposes canonical TCR pMHC docking geometry even on non binding sequences, so the QC step is a skeptical judge that flags a fold as suspect when its CDR3 to peptide contact does not beat the scramble control calibration.
+2. A predicted structure does not confirm specificity. Protenix imposes canonical TCR pMHC docking geometry even on non binding sequences, so the QC step is a skeptical judge that flags a fold as suspect when its beta V-domain to peptide contact (CDR3beta dominated) does not beat the scramble control calibration.
 
 ## Two layers
 
@@ -56,6 +56,12 @@ python3.11 -m venv .venv
 
 The `[dev]` extra adds `pytest` for the test suite; to only run the tool, `pip install -e .` is enough. Either way the install pulls [`tcr-explorer`](https://pypi.org/project/tcr-explorer/) (germline reconstruction, TCRdist, paired similarity) from PyPI automatically. Verified from a clean clone on Python 3.11: the suite is 247 passed.
 
+Activate the environment before the commands below (or prefix each with `./.venv/bin/`):
+
+```
+source .venv/bin/activate
+```
+
 ## Run
 
 ```
@@ -63,6 +69,8 @@ python -m rep2struct <run_dir> [--top-n N]
 ```
 
 The agent layer uses the Claude Agent SDK, so set `ANTHROPIC_API_KEY` (or be signed in to Claude Code) before running. The deterministic stages and the test suite need no key.
+
+A ready to use demo input ships in the repo: `tests/fixtures/tenx_tiny.csv` (a small anonymized 10x contig slice). Drop it into the web app, or point a run at it, to exercise the pipeline without your own data.
 
 First run: the intake agent interviews you (data, question, compute route), then builds the fold artifacts and stops. Fold them (Colab or a local GPU), then rerun the same `<run_dir>` to resume through QC and the report. Selection depth is `--top-n` (default 8, or the `R2S_TOP_N` env var); `R2S_ANNOTATE_CAP` bounds how many clonotypes are annotated on a large repertoire.
 

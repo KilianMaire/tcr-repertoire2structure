@@ -309,7 +309,7 @@ Reuse the existing run dir (it already has ingest/annotate/foldjobs for `data/va
 ./.venv/bin/python - <<'PY'
 import asyncio, sys; sys.path.insert(0, "src")
 from rep2struct import agent_tools as at
-RD = "/private/tmp/claude-501/-Users-fzd181/675f8148-b48a-46bd-81f3-c0d57eae74fe/scratchpad/live_run"
+RD = "<scratchpad>/live_run"
 print(asyncio.run(at.build_fold_notebook.handler(
     {"run_dir": RD, "clonotype_id": "9ab6b3bfa998", "tool": "protenix"}))["structuredContent"])
 PY
@@ -330,7 +330,7 @@ Confirm the Protenix run actually used the a3m (the fold log references the MSA 
 Download `protenix_folds.zip`, unzip into the run dir, then:
 
 ```bash
-./.venv/bin/python /private/tmp/claude-501/-Users-fzd181/675f8148-b48a-46bd-81f3-c0d57eae74fe/scratchpad/real_qc.py
+./.venv/bin/python <scratchpad>/real_qc.py
 ```
 
 - [ ] **Step 5: Confirm the success criterion**

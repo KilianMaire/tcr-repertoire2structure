@@ -13,7 +13,7 @@ def build(inputs: dict, working_path: str = ".") -> str:
     """A self contained bash script that folds each embedded Protenix record on a machine
     the user has a shell on. INPUTS is {key: <protenix prediction JSON>} (cognate + scramble,
     keys prefixed by clonotype id). CIFs land under out/{key} in working_path, the same
-    {cid}_cognate / {cid}_scramble layout the CDR3-peptide QC calibrates on. MSA free by
+    {cid}_cognate / {cid}_scramble layout the beta V-domain to peptide QC calibrates on. MSA free by
     design (mirrors the documented reliable Protenix path); no browser repatriation because
     the outputs are already local."""
     embedded = json.dumps(inputs)

@@ -567,7 +567,7 @@ async def qc_structure(args):
             from .qc import ensemble_contact
             # Protenix emits several samples whose docking pose varies a lot, and it writes a
             # cognate + scramble pair per clonotype ({cid}_cognate / {cid}_scramble in the path).
-            # Ensemble the CDR3-peptide contact over the cognate samples and calibrate it against
+            # Ensemble the beta V-domain to peptide contact over the cognate samples and calibrate it against
             # this clonotype's OWN scramble ensemble (the per-clonotype null), never a global
             # number. Fall back to the caller's explicit threshold + a single model only when the
             # recorded paths carry no cognate/scramble split (legacy single-model records).

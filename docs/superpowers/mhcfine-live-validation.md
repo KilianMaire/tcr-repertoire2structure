@@ -101,7 +101,7 @@ the main-DOM `.output_subarea` (that only carries plain stdout streams). The rel
 primitive is: click cell body -> `Escape` -> `b` (new cell) -> `keyboard.type(one_physical_line)`
 -> `Control+Enter`. Keep the fold code on ONE physical line (semicolons, ternary for the
 `if`) so monaco auto-indent cannot corrupt it. A clean one-shot notebook lives at
-`/Users/fzd181/.playwright-mcp/mhcfine_fold.ipynb`.
+`~/.playwright-mcp/mhcfine_fold.ipynb`.
 
 ## Open unknowns (next session)
 
@@ -212,5 +212,5 @@ on a fail-loud scaffold or a Colab error). Suite 104/104.
 
 STILL PENDING (live drive only, no more offline code): run the mhcfine-agent end to end on
 a real Colab session to confirm the Playwright upload/run/download loop. Env caveat: the run
-dir must sit under a Playwright-allowed root (e.g. /Users/fzd181) for the browser file
+dir must sit under a Playwright-allowed root (e.g. the home directory) for the browser file
 upload, and the Step 2 monaco/clipboard + iframe-read lessons apply to the live drive.

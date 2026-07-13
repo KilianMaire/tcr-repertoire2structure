@@ -121,9 +121,9 @@ def verdict(scores, scramble_threshold: float) -> QCResult:
         return QCResult(cid, "qc_failed", f"model has {scores.get('n_chains')} chains, need 5")
     if scores["cdr3_pep_atoms"] <= scramble_threshold:
         return QCResult(cid, "suspect",
-                        "CDR3 to peptide contact not above scramble calibration",
+                        "beta V-domain to peptide contact not above scramble calibration",
                         cdr3_pep_atoms=scores["cdr3_pep_atoms"])
-    return QCResult(cid, "reliable", "CDR3 to peptide contact beats scramble null",
+    return QCResult(cid, "reliable", "beta V-domain to peptide contact beats scramble null",
                     cdr3_pep_atoms=scores["cdr3_pep_atoms"])
 
 def verdict_binding(score: float, threshold: float, clonotype_id: str, tool: str) -> QCResult:
