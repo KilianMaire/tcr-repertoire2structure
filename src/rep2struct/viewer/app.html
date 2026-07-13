@@ -7,98 +7,124 @@
 <style>
   :root {
     --bg:#0d1117; --panel:#161b22; --edge:#30363d; --fg:#e6edf3; --muted:#8b949e;
-    --accent:#58a6ff; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --accent:#58a6ff; --good:#3fb950; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   * { box-sizing:border-box; }
   html,body { height:100%; margin:0; }
   body { background:var(--bg); color:var(--fg); display:grid;
-    grid-template-columns:230px 1fr;
-    font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+    grid-template-columns:240px 1fr;
+    font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif; }
+
+  /* sidebar */
   aside { background:var(--panel); border-right:1px solid var(--edge);
     padding:16px 12px; overflow:auto; }
-  aside h2 { font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+  aside h2 { font-size:11px; text-transform:uppercase; letter-spacing:.6px;
     color:var(--muted); margin:0 0 10px 4px; }
+  .newrun { display:block; width:100%; text-align:left; background:var(--accent);
+    color:#04122b; border:0; border-radius:8px; padding:9px 12px; margin-bottom:12px;
+    cursor:pointer; font-size:13px; font-weight:600; }
   .runbtn { display:block; width:100%; text-align:left; background:transparent;
     color:var(--fg); border:1px solid var(--edge); border-radius:8px;
     padding:8px 10px; margin-bottom:6px; cursor:pointer; font-size:13px; }
   .runbtn:hover { border-color:var(--accent); }
   .runbtn.active { border-color:var(--accent); background:#1f2937; }
-  .runbtn small { display:block; color:var(--muted); font-family:var(--mono);
-    font-size:11px; }
-  .newrun { color:var(--accent); }
-  main { display:flex; flex-direction:column; height:100vh; }
-  header { padding:14px 22px; border-bottom:1px solid var(--edge);
-    display:flex; align-items:baseline; gap:14px; }
+  .runbtn .meta { display:flex; justify-content:space-between; align-items:center;
+    color:var(--muted); font-family:var(--mono); font-size:11px; margin-top:2px; }
+  .runbtn .live { color:var(--good); }
+  .empty { color:var(--muted); font-size:12px; padding:6px 4px; }
+
+  /* main */
+  main { display:flex; flex-direction:column; height:100vh; min-width:0; }
+  header { padding:13px 24px; border-bottom:1px solid var(--edge);
+    display:flex; align-items:baseline; gap:12px; }
   header h1 { font-size:15px; margin:0; }
-  header .status { margin-left:auto; color:var(--muted); font-size:12px; }
+  header .sub { color:var(--muted); font-size:12px; }
+  header .status { margin-left:auto; color:var(--muted); font-size:12px;
+    font-family:var(--mono); }
   header .dot { width:8px;height:8px;border-radius:50%;display:inline-block;
-    margin-right:5px;background:#6e7681; }
-  header .dot.live { background:#3fb950; animation:pulse 1.6s infinite; }
+    margin-right:6px;background:#6e7681;vertical-align:middle; }
+  header .dot.live { background:var(--good); animation:pulse 1.6s infinite; }
   @keyframes pulse { 50%{opacity:.3;} }
-  #feed { flex:1; overflow:auto; padding:20px 22px; }
-  .row { display:grid; grid-template-columns:140px 1fr; gap:12px; padding:7px 0;
+
+  #feed { flex:1; overflow:auto; display:flex; flex-direction:column; min-height:0; }
+  #log { width:100%; max-width:880px; margin:0 auto; padding:20px 24px 8px; }
+
+  .row { display:grid; grid-template-columns:132px 1fr; gap:12px; padding:7px 0;
     animation:fade .3s ease; }
   @keyframes fade { from{opacity:0;transform:translateY(6px);} }
   .who { font-family:var(--mono); font-size:12px; text-align:right; padding-top:3px;
-    color:var(--muted); }
+    color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .card { background:var(--panel); border:1px solid var(--edge);
-    border-left:3px solid var(--lane,var(--edge)); border-radius:8px; padding:9px 13px; }
+    border-left:3px solid var(--lane,var(--edge)); border-radius:8px; padding:9px 13px;
+    min-width:0; overflow-wrap:anywhere; }
   .card.text { white-space:pre-wrap; }
   .card.tool { font-family:var(--mono); font-size:13px; }
   .card.tool .name { color:#d2a8ff; font-weight:600; }
   .card.result { font-family:var(--mono); font-size:12px; color:var(--muted); }
   .divider { grid-column:1/-1; text-align:center; color:var(--muted);
-    font-family:var(--mono); font-size:12px; margin:12px 0 4px;
+    font-family:var(--mono); font-size:12px; margin:14px 0 4px;
     border-top:1px dashed var(--edge); padding-top:12px; }
   .lane-you{--lane:#58a6ff;} .lane-orchestrator{--lane:#f0883e;}
   .lane-intake{--lane:#3fb950;} .lane-structure-strategist{--lane:#d2a8ff;}
   .lane-executor{--lane:#e3b341;} .lane-qc{--lane:#f85149;}
   .lane-report{--lane:#56d4dd;} .lane-run{--lane:#6e7681;}
-  footer { border-top:1px solid var(--edge); padding:14px 22px; }
-  #drop { border:2px dashed var(--edge); border-radius:12px; padding:34px;
-    text-align:center; color:var(--muted); cursor:pointer; }
-  #drop.hot { border-color:var(--accent); color:var(--fg); background:#12203a; }
-  #drop b { color:var(--accent); }
-  .composer { display:flex; gap:10px; }
-  .composer input { flex:1; background:var(--bg); color:var(--fg);
-    border:1px solid var(--edge); border-radius:10px; padding:11px 14px; font-size:15px; }
-  .composer button { background:var(--accent); color:#04122b; border:0;
-    border-radius:10px; padding:0 18px; font-weight:600; cursor:pointer; }
-  .composer input:disabled,.composer button:disabled { opacity:.4; cursor:not-allowed; }
-  .hint { color:var(--muted); font-size:12px; margin-top:8px; text-align:center; }
-  .working { padding:8px 22px; font-family:var(--mono); font-size:12px; color:var(--muted);
+  .feedempty { margin:auto; color:var(--muted); font-family:var(--mono); font-size:13px;
+    text-align:center; padding:40px; }
+
+  /* hero dropzone (idle state), centered in the main area */
+  .hero { margin:auto; width:100%; max-width:560px; padding:24px; }
+  #drop { border:2px dashed var(--edge); border-radius:16px; padding:48px 32px;
+    text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  #drop:hover, #drop.hot { border-color:var(--accent); color:var(--fg); background:#12203a; }
+  #drop .icon { font-size:34px; }
+  #drop .big { font-size:18px; color:var(--fg); margin:12px 0 6px; }
+  #drop .big b { color:var(--accent); }
+  #drop .hint { font-size:13px; }
+
+  /* working / your-turn indicator */
+  .working { padding:8px 24px; font-family:var(--mono); font-size:12px; color:var(--muted);
     border-top:1px solid var(--edge); display:flex; align-items:center; gap:9px; }
   .working .dots span { display:inline-block; width:6px; height:6px; border-radius:50%;
     background:var(--accent); animation:blink 1.2s infinite; }
   .working .dots span:nth-child(2){ animation-delay:.2s; }
   .working .dots span:nth-child(3){ animation-delay:.4s; }
   @keyframes blink { 0%,80%,100%{opacity:.2;} 40%{opacity:1;} }
-  .working.turn { color:#3fb950; font-weight:600; }
-  .composer input.awaiting { border-color:#3fb950; box-shadow:0 0 0 2px rgba(63,185,80,.25); }
+  .working.turn { color:var(--good); font-weight:600; }
+
+  footer { border-top:1px solid var(--edge); padding:14px 24px; }
+  .composer { display:flex; gap:10px; max-width:880px; margin:0 auto; }
+  .composer input { flex:1; background:var(--bg); color:var(--fg);
+    border:1px solid var(--edge); border-radius:10px; padding:11px 14px; font-size:15px; }
+  .composer input.awaiting { border-color:var(--good); box-shadow:0 0 0 2px rgba(63,185,80,.25); }
+  .composer button { background:var(--accent); color:#04122b; border:0;
+    border-radius:10px; padding:0 18px; font-weight:600; cursor:pointer; }
+  .composer input:disabled,.composer button:disabled { opacity:.4; cursor:not-allowed; }
 </style>
 </head>
 <body>
 <aside>
+  <button class="newrun" id="newrun">+ New run</button>
   <h2>Runs</h2>
-  <button class="runbtn newrun" id="newrun">+ New run</button>
   <div id="runs"></div>
 </aside>
 <main>
   <header>
     <h1>Repertoire2Structure</h1>
+    <span class="sub">multi agent TCR repertoire to structure</span>
     <span class="status"><span class="dot" id="dot"></span><span id="statustxt">idle</span></span>
   </header>
   <div id="feed"></div>
   <div id="working" class="working" hidden></div>
-  <footer id="footer"></footer>
+  <footer id="footer" hidden></footer>
 </main>
 
 <template id="dropzone">
-  <div id="drop">
-    <p><b>Drop a 10x contig CSV here</b> to start a run</p>
-    <p class="hint">or click to choose a file. The intake agent will interview you here.</p>
+  <div class="hero"><div id="drop">
+    <div class="icon">🧬</div>
+    <div class="big"><b>Drop a 10x contig CSV</b> to start a run</div>
+    <div class="hint">or click to choose a file. The intake agent will interview you here.</div>
     <input type="file" id="file" accept=".csv" hidden>
-  </div>
+  </div></div>
 </template>
 
 <script>
@@ -107,13 +133,15 @@
   const runsEl = document.getElementById("runs");
   const dot = document.getElementById("dot");
   const statustxt = document.getElementById("statustxt");
+  const workingEl = document.getElementById("working");
 
   let current = null;      // run name being viewed
   let live = false;        // is `current` the active, answerable run
   let lastSeq = -1;
-  let lastEventTime = Date.now();  // when the last transcript event arrived
-  let awaitingShown = false;       // so we focus the box only on the turn transition
-  const workingEl = document.getElementById("working");
+  let logEl = null;        // the timeline container inside #feed
+  let lastEventTime = Date.now();
+  let awaitingShown = false;
+  let started = false;     // has the initial state been decided
 
   const LANES = ["you","orchestrator","intake","structure-strategist","executor","qc","report","run"];
   const laneFor = r => r.kind==="user" ? "you"
@@ -124,7 +152,7 @@
   function render(r) {
     if (r.kind==="run_start"||r.kind==="run_end") {
       const d=document.createElement("div"); d.className="divider";
-      d.textContent=(r.kind==="run_start"?"▶ ":"■ ")+r.text; feed.appendChild(d); return;
+      d.textContent=(r.kind==="run_start"?"▶ ":"■ ")+r.text; logEl.appendChild(d); return;
     }
     const wrap=document.createElement("div"); wrap.className="row lane-"+laneFor(r);
     const who=document.createElement("div"); who.className="who";
@@ -136,12 +164,14 @@
     else if (r.kind==="subagent_start"||r.kind==="subagent_stop") { card.className="card tool";
       card.textContent=(r.kind==="subagent_start"?"▸ ":"◂ ")+r.text; }
     else { card.className="card text"; card.textContent=r.text; }
-    wrap.appendChild(who); wrap.appendChild(card); feed.appendChild(wrap);
+    wrap.appendChild(who); wrap.appendChild(card); logEl.appendChild(wrap);
   }
 
+  // ---- views -------------------------------------------------------------
   function showDropzone() {
-    footer.innerHTML="";
-    footer.appendChild(document.getElementById("dropzone").content.cloneNode(true));
+    current=null; live=false; feed.innerHTML=""; logEl=null;
+    footer.hidden=true; footer.innerHTML=""; workingEl.hidden=true;
+    feed.appendChild(document.getElementById("dropzone").content.cloneNode(true));
     const drop=document.getElementById("drop"), file=document.getElementById("file");
     drop.onclick=()=>file.click();
     file.onchange=()=>file.files[0] && startRun(file.files[0]);
@@ -149,6 +179,13 @@
     drop.ondragleave=()=>drop.classList.remove("hot");
     drop.ondrop=e=>{e.preventDefault();drop.classList.remove("hot");
       e.dataTransfer.files[0] && startRun(e.dataTransfer.files[0]);};
+    highlight();
+  }
+  function openTimeline(name, isLive) {
+    current=name; live=isLive; lastSeq=-1;
+    feed.innerHTML=""; logEl=document.createElement("div"); logEl.id="log"; feed.appendChild(logEl);
+    footer.hidden=false; showComposer(isLive);
+    highlight();
   }
   function showComposer(enabled) {
     footer.innerHTML=
@@ -164,32 +201,33 @@
     msg.focus();
   }
 
+  // ---- actions -----------------------------------------------------------
   async function startRun(f) {
     const buf=await f.arrayBuffer();
     const res=await (await fetch("/start",{method:"POST",headers:{"X-Filename":f.name},body:buf})).json();
-    current=res.run; live=true; lastSeq=-1; feed.innerHTML="";
-    showComposer(true); refreshRuns();
-  }
-  function openRun(name, isLive) {
-    current=name; live=isLive; lastSeq=-1; feed.innerHTML="";
-    showComposer(isLive); highlight();
+    openTimeline(res.run, true); refreshRuns();
   }
 
   async function refreshRuns() {
-    const runs=await (await fetch("/runs")).json();
-    const status=await (await fetch("/status")).json();
+    const [runs, status] = await Promise.all([
+      (await fetch("/runs")).json(), (await fetch("/status")).json()]);
+    // hide empty, finished runs; keep the active one always
+    const shown = runs.filter(r => r.events>0 || r.name===status.current);
     runsEl.innerHTML="";
-    for (const r of runs.slice().reverse()) {
-      const b=document.createElement("button"); b.className="runbtn";
-      b.dataset.run=r.name;
-      b.innerHTML=r.name+"<small>"+r.events+" events</small>";
-      b.onclick=()=>openRun(r.name, status.running && status.current===r.name);
+    if (!shown.length) runsEl.innerHTML='<div class="empty">No runs yet. Drop a CSV to begin.</div>';
+    for (const r of shown.slice().reverse()) {
+      const isLive = status.running && status.current===r.name;
+      const b=document.createElement("button"); b.className="runbtn"; b.dataset.run=r.name;
+      b.innerHTML="<div>"+r.name+"</div><div class=meta><span>"+r.events+" events</span>"
+        +(isLive?"<span class=live>● live</span>":"")+"</div>";
+      b.onclick=()=>openTimeline(r.name, isLive);
       runsEl.appendChild(b);
     }
     highlight();
   }
   function highlight() {
-    for (const b of runsEl.children) b.classList.toggle("active", b.dataset.run===current);
+    for (const b of runsEl.children)
+      b.classList && b.classList.toggle("active", b.dataset && b.dataset.run===current);
   }
 
   function updateWorking(status) {
@@ -205,8 +243,7 @@
       if (inp) { inp.classList.add("awaiting"); if (!awaitingShown) inp.focus(); }
       awaitingShown = true;
     } else {
-      awaitingShown = false;
-      inp && inp.classList.remove("awaiting");
+      awaitingShown = false; inp && inp.classList.remove("awaiting");
       const secs = Math.round((Date.now()-lastEventTime)/1000);
       workingEl.className = "working";
       workingEl.innerHTML =
@@ -219,24 +256,37 @@
     const status=await (await fetch("/status")).json();
     dot.classList.toggle("live", !!status.running);
     statustxt.textContent = status.running ? ("running "+status.current) : "idle";
-    if (live && current && status.current===current && !status.running) live=false, showComposer(false);
-    if (!current) { if (!footer.querySelector("#drop")) showDropzone(); workingEl.hidden=true; return; }
-    try {
-      const rows=await (await fetch("/transcript.jsonl?run="+encodeURIComponent(current),
-        {cache:"no-store"})).json();
-      for (const r of rows) if (r.seq>lastSeq) { render(r); lastSeq=r.seq; lastEventTime=Date.now(); }
-      feed.scrollTop=feed.scrollHeight;
-    } catch(e){}
+
+    // decide the initial view once: open the active run if there is one
+    if (!started) {
+      started=true;
+      if (status.running && status.current) openTimeline(status.current, true);
+      else showDropzone();
+    }
+    // a run we are viewing just finished -> drop to read only
+    if (live && current && status.current===current && !status.running) { live=false; showComposer(false); }
+
+    if (current && logEl) {
+      try {
+        const rows=await (await fetch("/transcript.jsonl?run="+encodeURIComponent(current),
+          {cache:"no-store"})).json();
+        if (!rows.length) { if(!logEl.querySelector(".feedempty"))
+          logEl.innerHTML='<div class="feedempty">waiting for the first step…</div>'; }
+        for (const r of rows) if (r.seq>lastSeq) {
+          if (lastSeq===-1) logEl.innerHTML="";
+          render(r); lastSeq=r.seq; lastEventTime=Date.now();
+        }
+        feed.scrollTop=feed.scrollHeight;
+      } catch(e){}
+    }
     updateWorking(status);
   }
 
-  document.getElementById("newrun").onclick=()=>{ current=null; live=false; feed.innerHTML="";
-    showDropzone(); highlight(); };
-
-  showDropzone();
+  document.getElementById("newrun").onclick=showDropzone;
   refreshRuns();
   setInterval(poll, 500);
   setInterval(refreshRuns, 3000);
+  poll();
 </script>
 </body>
 </html>
