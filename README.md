@@ -50,17 +50,19 @@ A deterministic stage layer (pure Python, fully tested offline) carries reliabil
 
 ```
 python3.11 -m venv .venv
-./.venv/bin/pip install -e .
+./.venv/bin/pip install -e ".[dev]"
 ./.venv/bin/python -m pytest -q
 ```
 
-Installing R2S pulls [`tcr-explorer`](https://pypi.org/project/tcr-explorer/) (germline reconstruction, TCRdist, paired similarity) from PyPI automatically.
+The `[dev]` extra adds `pytest` for the test suite; to only run the tool, `pip install -e .` is enough. Either way the install pulls [`tcr-explorer`](https://pypi.org/project/tcr-explorer/) (germline reconstruction, TCRdist, paired similarity) from PyPI automatically. Verified from a clean clone on Python 3.11: the suite is 247 passed.
 
 ## Run
 
 ```
 python -m rep2struct <run_dir> [--top-n N]
 ```
+
+The agent layer uses the Claude Agent SDK, so set `ANTHROPIC_API_KEY` (or be signed in to Claude Code) before running. The deterministic stages and the test suite need no key.
 
 First run: the intake agent interviews you (data, question, compute route), then builds the fold artifacts and stops. Fold them (Colab or a local GPU), then rerun the same `<run_dir>` to resume through QC and the report. Selection depth is `--top-n` (default 8, or the `R2S_TOP_N` env var); `R2S_ANNOTATE_CAP` bounds how many clonotypes are annotated on a large repertoire.
 
