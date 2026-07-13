@@ -1,0 +1,5 @@
+# Submission summary
+
+Repertoire2Structure (R2S) is a multi agent pipeline, orchestrated by Claude, that turns a raw 10x single cell TCR repertoire into QC'd predicted TCR pMHC structures for its top clonotypes. A conversational intake agent frames the run, a structure strategist routes each clonotype group to one folding tool (Protenix, TCRdock and others, on Colab or a local GPU), fold executors run the jobs, and a skeptical QC agent judges every structure against a per group scramble control before a report agent writes a self contained HTML summary.
+
+Two honesty rules are enforced in the code, not just prose. Specificity is annotation by similarity, never prediction, and clonotypes with no close neighbor are flagged unannotatable. A predicted structure never confirms specificity. Our preregistered benchmark found that structural confidence reads peptide presentation, not TCR recognition, converging with McMaster et al. (2026). The contribution is the agentic question to structure system and its honesty methodology: preregistration, scramble QC and leakage guards. Built on the Claude Agent SDK, with 219 offline tests.

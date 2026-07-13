@@ -44,9 +44,11 @@ A deterministic stage layer (pure Python, fully tested offline) carries reliabil
 
 ```
 python3.11 -m venv .venv
-./.venv/bin/pip install -e . -e ~/imgt-api
+./.venv/bin/pip install -e .
 ./.venv/bin/python -m pytest -q
 ```
+
+Installing R2S pulls [`tcr-explorer`](https://pypi.org/project/tcr-explorer/) (germline reconstruction, TCRdist, paired similarity) from PyPI automatically.
 
 ## Run
 

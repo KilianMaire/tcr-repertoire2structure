@@ -10,10 +10,10 @@ dependencies = [
   "pandas>=2.0", "polars>=1.0", "numpy>=1.24",
   "biopython>=1.83", "jinja2>=3.1", "claude-agent-sdk>=0.1",
   "httpx>=0.24",
+  # germline reconstruction, TCRdist, paired similarity; the tcrdist extra
+  # pulls pwseqdist for authoritative scoring (BLOSUM fallback without it).
+  "tcr-explorer[tcrdist]>=0.3.0",
 ]
-# Runtime also needs `tcr-explorer` (germline reconstruction, TCRdist, paired
-# similarity) with its `tcrdist` extra (pwseqdist). Installed editable from
-# ~/imgt-api for this build: `pip install -e ~/imgt-api pwseqdist`.
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
