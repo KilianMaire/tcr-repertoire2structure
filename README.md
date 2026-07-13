@@ -4,6 +4,12 @@ A multi agent pipeline, orchestrated by Claude, that turns a raw 10x single cell
 
 Built for the Built with Claude: Life Sciences hackathon (Researcher track).
 
+## Demo (2 min 36 s)
+
+<video src="https://github.com/KilianMaire/tcr-repertoire2structure/raw/main/docs/demo/R2S_submission.mp4" controls width="720"></video>
+
+A narrated walk through: what the pipeline recognizes (the TCR to peptide MHC complex), the multi agent run on a real 10x repertoire, honest specificity annotation (23 high confidence, 90 unannotatable, no forced label), the structure strategist routing a class one group to Protenix, stub flagging before a fold is spent, and the skeptical scramble calibrated QC. If the inline player does not load, [watch the file directly](docs/demo/R2S_submission.mp4).
+
 ![architecture](docs/architecture.png)
 
 ## Repository layout
