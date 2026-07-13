@@ -6,9 +6,9 @@ Built for the Built with Claude: Life Sciences hackathon (Researcher track).
 
 ## Demo (2 min 36 s)
 
-[![Watch the R2S demo](docs/demo/poster.png)](docs/demo/R2S_submission.mp4)
+[![Watch the R2S demo on YouTube](docs/demo/poster.png)](https://www.youtube.com/watch?v=Ru48ZQThA60)
 
-Click the thumbnail to play, or [download the mp4](docs/demo/R2S_submission.mp4). A narrated walk through: what the pipeline recognizes (the TCR to peptide MHC complex), the multi agent run on a real 10x repertoire, honest specificity annotation (23 high confidence, 90 unannotatable, no forced label), the structure strategist routing a class one group to Protenix, stub flagging before a fold is spent, and the skeptical scramble calibrated QC.
+Watch on [YouTube](https://www.youtube.com/watch?v=Ru48ZQThA60), or [download the mp4](docs/demo/R2S_submission.mp4). A narrated walk through: what the pipeline recognizes (the TCR to peptide MHC complex), the multi agent run on a real 10x repertoire, honest specificity annotation (23 high confidence, 90 unannotatable, no forced label), the structure strategist routing a class one group to Protenix, stub flagging before a fold is spent, and the skeptical scramble calibrated QC.
 
 ![architecture](docs/architecture.png)
 
