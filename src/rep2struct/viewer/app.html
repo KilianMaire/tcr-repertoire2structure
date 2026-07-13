@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2S</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --edge:#30363d; --fg:#e6edf3; --muted:#8b949e;
+    --accent:#58a6ff; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--fg); display:grid;
+    grid-template-columns:230px 1fr;
+    font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  aside { background:var(--panel); border-right:1px solid var(--edge);
+    padding:16px 12px; overflow:auto; }
+  aside h2 { font-size:12px; text-transform:uppercase; letter-spacing:.5px;
+    color:var(--muted); margin:0 0 10px 4px; }
+  .runbtn { display:block; width:100%; text-align:left; background:transparent;
+    color:var(--fg); border:1px solid var(--edge); border-radius:8px;
+    padding:8px 10px; margin-bottom:6px; cursor:pointer; font-size:13px; }
+  .runbtn:hover { border-color:var(--accent); }
+  .runbtn.active { border-color:var(--accent); background:#1f2937; }
+  .runbtn small { display:block; color:var(--muted); font-family:var(--mono);
+    font-size:11px; }
+  .newrun { color:var(--accent); }
+  main { display:flex; flex-direction:column; height:100vh; }
+  header { padding:14px 22px; border-bottom:1px solid var(--edge);
+    display:flex; align-items:baseline; gap:14px; }
+  header h1 { font-size:15px; margin:0; }
+  header .status { margin-left:auto; color:var(--muted); font-size:12px; }
+  header .dot { width:8px;height:8px;border-radius:50%;display:inline-block;
+    margin-right:5px;background:#6e7681; }
+  header .dot.live { background:#3fb950; animation:pulse 1.6s infinite; }
+  @keyframes pulse { 50%{opacity:.3;} }
+  #feed { flex:1; overflow:auto; padding:20px 22px; }
+  .row { display:grid; grid-template-columns:140px 1fr; gap:12px; padding:7px 0;
+    animation:fade .3s ease; }
+  @keyframes fade { from{opacity:0;transform:translateY(6px);} }
+  .who { font-family:var(--mono); font-size:12px; text-align:right; padding-top:3px;
+    color:var(--muted); }
+  .card { background:var(--panel); border:1px solid var(--edge);
+    border-left:3px solid var(--lane,var(--edge)); border-radius:8px; padding:9px 13px; }
+  .card.text { white-space:pre-wrap; }
+  .card.tool { font-family:var(--mono); font-size:13px; }
+  .card.tool .name { color:#d2a8ff; font-weight:600; }
+  .card.result { font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .divider { grid-column:1/-1; text-align:center; color:var(--muted);
+    font-family:var(--mono); font-size:12px; margin:12px 0 4px;
+    border-top:1px dashed var(--edge); padding-top:12px; }
+  .lane-you{--lane:#58a6ff;} .lane-orchestrator{--lane:#f0883e;}
+  .lane-intake{--lane:#3fb950;} .lane-structure-strategist{--lane:#d2a8ff;}
+  .lane-executor{--lane:#e3b341;} .lane-qc{--lane:#f85149;}
+  .lane-report{--lane:#56d4dd;} .lane-run{--lane:#6e7681;}
+  footer { border-top:1px solid var(--edge); padding:14px 22px; }
+  #drop { border:2px dashed var(--edge); border-radius:12px; padding:34px;
+    text-align:center; color:var(--muted); cursor:pointer; }
+  #drop.hot { border-color:var(--accent); color:var(--fg); background:#12203a; }
+  #drop b { color:var(--accent); }
+  .composer { display:flex; gap:10px; }
+  .composer input { flex:1; background:var(--bg); color:var(--fg);
+    border:1px solid var(--edge); border-radius:10px; padding:11px 14px; font-size:15px; }
+  .composer button { background:var(--accent); color:#04122b; border:0;
+    border-radius:10px; padding:0 18px; font-weight:600; cursor:pointer; }
+  .composer input:disabled,.composer button:disabled { opacity:.4; cursor:not-allowed; }
+  .hint { color:var(--muted); font-size:12px; margin-top:8px; text-align:center; }
+</style>
+</head>
+<body>
+<aside>
+  <h2>Runs</h2>
+  <button class="runbtn newrun" id="newrun">+ New run</button>
+  <div id="runs"></div>
+</aside>
+<main>
+  <header>
+    <h1>Repertoire2Structure</h1>
+    <span class="status"><span class="dot" id="dot"></span><span id="statustxt">idle</span></span>
+  </header>
+  <div id="feed"></div>
+  <footer id="footer"></footer>
+</main>
+
+<template id="dropzone">
+  <div id="drop">
+    <p><b>Drop a 10x contig CSV here</b> to start a run</p>
+    <p class="hint">or click to choose a file. The intake agent will interview you here.</p>
+    <input type="file" id="file" accept=".csv" hidden>
+  </div>
+</template>
+
+<script>
+  const feed = document.getElementById("feed");
+  const footer = document.getElementById("footer");
+  const runsEl = document.getElementById("runs");
+  const dot = document.getElementById("dot");
+  const statustxt = document.getElementById("statustxt");
+
+  let current = null;      // run name being viewed
+  let live = false;        // is `current` the active, answerable run
+  let lastSeq = -1;
+
+  const LANES = ["you","orchestrator","intake","structure-strategist","executor","qc","report","run"];
+  const laneFor = r => r.kind==="user" ? "you"
+      : (r.kind==="run_start"||r.kind==="run_end") ? "run"
+      : (LANES.find(l => (r.agent||"").toLowerCase().includes(l)) || "orchestrator");
+  const esc = s => { const d=document.createElement("div"); d.textContent=s; return d.innerHTML; };
+
+  function render(r) {
+    if (r.kind==="run_start"||r.kind==="run_end") {
+      const d=document.createElement("div"); d.className="divider";
+      d.textContent=(r.kind==="run_start"?"▶ ":"■ ")+r.text; feed.appendChild(d); return;
+    }
+    const wrap=document.createElement("div"); wrap.className="row lane-"+laneFor(r);
+    const who=document.createElement("div"); who.className="who";
+    who.textContent = r.kind==="user" ? "you" : (r.agent||"agent");
+    const card=document.createElement("div");
+    if (r.kind==="tool_use") { card.className="card tool";
+      card.innerHTML="<span class=name>"+esc(r.tool||"tool")+"</span>"+(r.text?"  "+esc(r.text):""); }
+    else if (r.kind==="tool_result") { card.className="card result"; card.textContent="= "+r.text; }
+    else if (r.kind==="subagent_start"||r.kind==="subagent_stop") { card.className="card tool";
+      card.textContent=(r.kind==="subagent_start"?"▸ ":"◂ ")+r.text; }
+    else { card.className="card text"; card.textContent=r.text; }
+    wrap.appendChild(who); wrap.appendChild(card); feed.appendChild(wrap);
+  }
+
+  function showDropzone() {
+    footer.innerHTML="";
+    footer.appendChild(document.getElementById("dropzone").content.cloneNode(true));
+    const drop=document.getElementById("drop"), file=document.getElementById("file");
+    drop.onclick=()=>file.click();
+    file.onchange=()=>file.files[0] && startRun(file.files[0]);
+    drop.ondragover=e=>{e.preventDefault();drop.classList.add("hot");};
+    drop.ondragleave=()=>drop.classList.remove("hot");
+    drop.ondrop=e=>{e.preventDefault();drop.classList.remove("hot");
+      e.dataTransfer.files[0] && startRun(e.dataTransfer.files[0]);};
+  }
+  function showComposer(enabled) {
+    footer.innerHTML=
+      '<div class="composer"><input id="msg" placeholder="'
+      +(enabled?"Answer the agent…":"Viewing a past run (read only)")
+      +'" '+(enabled?"":"disabled")+'>'
+      +'<button id="send" '+(enabled?"":"disabled")+'>Send</button></div>';
+    if (!enabled) return;
+    const msg=document.getElementById("msg"), send=document.getElementById("send");
+    const fire=()=>{ const v=msg.value.trim(); if(!v)return;
+      fetch("/answer",{method:"POST",body:v}); msg.value=""; };
+    send.onclick=fire; msg.onkeydown=e=>{ if(e.key==="Enter") fire(); };
+    msg.focus();
+  }
+
+  async function startRun(f) {
+    const buf=await f.arrayBuffer();
+    const res=await (await fetch("/start",{method:"POST",headers:{"X-Filename":f.name},body:buf})).json();
+    current=res.run; live=true; lastSeq=-1; feed.innerHTML="";
+    showComposer(true); refreshRuns();
+  }
+  function openRun(name, isLive) {
+    current=name; live=isLive; lastSeq=-1; feed.innerHTML="";
+    showComposer(isLive); highlight();
+  }
+
+  async function refreshRuns() {
+    const runs=await (await fetch("/runs")).json();
+    const status=await (await fetch("/status")).json();
+    runsEl.innerHTML="";
+    for (const r of runs.slice().reverse()) {
+      const b=document.createElement("button"); b.className="runbtn";
+      b.dataset.run=r.name;
+      b.innerHTML=r.name+"<small>"+r.events+" events</small>";
+      b.onclick=()=>openRun(r.name, status.running && status.current===r.name);
+      runsEl.appendChild(b);
+    }
+    highlight();
+  }
+  function highlight() {
+    for (const b of runsEl.children) b.classList.toggle("active", b.dataset.run===current);
+  }
+
+  async function poll() {
+    const status=await (await fetch("/status")).json();
+    dot.classList.toggle("live", !!status.running);
+    statustxt.textContent = status.running ? ("running "+status.current) : "idle";
+    if (live && current && status.current===current && !status.running) live=false, showComposer(false);
+    if (!current) { if (!footer.querySelector("#drop")) showDropzone(); return; }
+    try {
+      const rows=await (await fetch("/transcript.jsonl?run="+encodeURIComponent(current),
+        {cache:"no-store"})).json();
+      for (const r of rows) if (r.seq>lastSeq) { render(r); lastSeq=r.seq; }
+      feed.scrollTop=feed.scrollHeight;
+    } catch(e){}
+  }
+
+  document.getElementById("newrun").onclick=()=>{ current=null; live=false; feed.innerHTML="";
+    showDropzone(); highlight(); };
+
+  showDropzone();
+  refreshRuns();
+  setInterval(poll, 500);
+  setInterval(refreshRuns, 3000);
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 
 from claude_agent_sdk import (
@@ -67,34 +68,52 @@ async def _drain(client, transcript=None, agent="orchestrator"):
     return "".join(text)
 
 
-async def run_session(run_dir: str, top_n: int = 8) -> None:
+async def _stdin_answer():
+    """Default answer source for the CLI: block on stdin off the event loop."""
+    try:
+        return await asyncio.to_thread(input, "> ")
+    except EOFError:
+        return None
+
+
+async def _interactive_loop(client, transcript, answer_source):
+    """Drive the intake conversation: drain one agent turn, ask the answer source
+    for the next user answer, stop on a blank or absent answer. The answer source
+    is injected (stdin for the CLI, a queue for the web app) so the loop itself is
+    transport agnostic and unit testable."""
+    while True:
+        await _drain(client, transcript)
+        answer = await answer_source()
+        if not answer or not answer.strip():
+            break
+        transcript.record("user", text=answer)
+        await client.query(answer)
+
+
+async def run_session(run_dir: str, top_n: int = 8, answer_source=None,
+                      data_path: str | None = None) -> None:
     """Phase 0/A/B driver. In the intake phase the intake-agent interviews the user turn by
-    turn (stdin), then the orchestrator runs in handoff mode and stops at the artifacts. A
-    rerun on the same run_dir enters the run phase and resumes through the checkpoint. top_n is
-    the selection depth (how many top-ranked clonotypes to fold)."""
+    turn, then the orchestrator runs in handoff mode and stops at the artifacts. A rerun on the
+    same run_dir enters the run phase and resumes through the checkpoint. top_n is the selection
+    depth. answer_source injects where user answers come from (stdin by default, a queue for the
+    web app); data_path, when set, tells the intake agent where the dropped file already is."""
+    answer_source = answer_source or _stdin_answer
     transcript = Transcript(run_dir)
     if plan_from_run_dir(run_dir) == "intake":
         transcript.record("run_start", text=f"intake phase, run_dir {run_dir}")
         opts = build_options(run_dir, mode="handoff")
         async with ClaudeSDKClient(options=opts) as client:
+            data_hint = (f" The data file has already been provided at {data_path}; do not ask "
+                         f"for the path, confirm it and ask the remaining intake questions."
+                         if data_path else "")
             kickoff = (
                 f"Run the intake interview for run_dir {run_dir} using the intake-agent, then "
                 f"call record_intake. After the brief is recorded, proceed to the handoff "
                 f"orchestration: ingest_repertoire, annotate_specificity, prep_and_select with "
                 f"top_n {top_n}, then the structure-strategist and each tool's executor to build "
-                f"the fold artifacts, and stop.")
+                f"the fold artifacts, and stop." + data_hint)
             await client.query(kickoff)
-            # Interactive loop: the agent asks, the user answers on stdin, until the run ends.
-            while True:
-                await _drain(client, transcript)
-                try:
-                    answer = input("> ")
-                except EOFError:
-                    break
-                if not answer.strip():
-                    break
-                transcript.record("user", text=answer)
-                await client.query(answer)
+            await _interactive_loop(client, transcript, answer_source)
         transcript.record("run_end", text="intake phase complete")
         return
     # run phase: resume from the persisted intake + checkpoint

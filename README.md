@@ -58,18 +58,33 @@ python -m rep2struct <run_dir> [--top-n N]
 
 First run: the intake agent interviews you (data, question, compute route), then builds the fold artifacts and stops. Fold them (Colab or a local GPU), then rerun the same `<run_dir>` to resume through QC and the report. Selection depth is `--top-n` (default 8, or the `R2S_TOP_N` env var); `R2S_ANNOTATE_CAP` bounds how many clonotypes are annotated on a large repertoire.
 
+## Web app (chat front end)
+
+For a run driven entirely from the browser, serve the chat landing page:
+
+```
+python -m rep2struct.webapp        # runs stored under runs/
+```
+
+Open the printed local address, drop a 10x contig CSV to start a run, and answer
+the intake agent in the chat. The multi agent orchestration streams into a live
+timeline colored by agent, and past runs stay in the sidebar (each backed by its
+own `run_dir` on disk). One run is active at a time. The server is standard
+library only; the agent answers you type are bridged to the running session
+through a queue that stands in for stdin.
+
 ## Live viewer
 
-Every run writes `<run_dir>/transcript.jsonl`, a best effort record of the real
-message stream (your turns, agent text, tool calls and results, sub agent
-handoffs). To watch a run as it happens, serve the timeline in a second terminal:
+The web app is the front end; the same timeline is also available read only for a
+run you drive from the terminal. Every run writes `<run_dir>/transcript.jsonl`, a
+best effort record of the real message stream (your turns, agent text, tool calls
+and results, sub agent handoffs). To watch a terminal run as it happens:
 
 ```
-python -m rep2struct.viewer <run_dir>
+python -m rep2struct <run_dir>       # in one terminal
+python -m rep2struct.viewer <run_dir>  # in another
 ```
 
-Open the printed local address in a browser. The page tails the transcript and
-appends each event live, colored by which agent produced it. It renders only what
-the agents actually emitted; nothing is staged.
+Both surfaces render only what the agents actually emitted; nothing is staged.
 
 Design notes and the build journal live in `docs/superpowers/`.
